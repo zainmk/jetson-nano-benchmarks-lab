@@ -52,6 +52,8 @@ Given a fixed edge platform (Jetson Orin Nano 8GB Super) and a fixed sensor (USB
 ### 2.1 The Jetson Orin Nano platform
 The Jetson Orin Nano 8GB integrates a 6-core ARM Cortex-A78AE CPU and a 1024-core **Ampere** GPU with **32 third-generation Tensor Cores** on a shared-memory SoC, with 8 GB of 128-bit LPDDR5. The "Super" configuration raises rated INT8 performance to ~67 TOPS.:
 
+![orin-nano-image](IMG_3419.jpeg)
+
 | Property | Value (fill / confirm from your device) |
 |---|---|
 | Kit | Jetson Orin Nano 8GB Super Developer Kit |
@@ -101,10 +103,18 @@ TensorRT compiles a network into an optimized "engine" for a target precision. O
 | Cooling | [built-in fan] |
 | Host PC (for ONNX export, optional) | [Surface Pro 11] |
 
+![materials](IMG_3469.jpeg)
+
 > ⚠️ **Power caveat:** an undersized supply can brown out under MAXN "Super" and silently corrupt results. Use a supply with headroom above the mode's rated draw, and record it — it is a confound.
 
-### 4.2 Software (record exact versions)
+### 4.2 Software
 🧪 **DO THIS** — run and paste the output:
+
+> Z - On a fresh OS install of the jetson-nano, the environment may not have 'pip' installed yet, therefore will require running the following commands, before the one below...
+
+`sudo apt update`  
+`sudo apt install python3-pip`  
+
 ```bash
 # L4T / JetPack
 cat /etc/nv_tegra_release
