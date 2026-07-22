@@ -110,8 +110,7 @@ TensorRT compiles a network into an optimized "engine" for a target precision. O
 ### 4.2 Software
 🧪 **DO THIS** — run and paste the output:
 
-> Z - On a fresh OS install of the jetson-nano, the environment may not have 'pip' installed yet, therefore will require running the following commands, before the one below...
-
+> Z - On a fresh OS install of the jetson-nano, the environment may not have 'pip' installed yet, therefore will require running the following commands, before the one below...  
 `sudo apt update`  
 `sudo apt install python3-pip`  
 
@@ -130,18 +129,22 @@ sudo nvpmodel -q --verbose
 
 | Component | Expected on JP 6.2.1 | Confirmed on your unit (paste) |
 |---|---|---|
-| JetPack | 6.2.1 | [____] |
-| Jetson Linux (L4T) | 36.4.4 | [____] |
-| OS / kernel | Ubuntu 22.04 / Linux 5.15 | [____] |
-| CUDA | 12.6 | [____] |
-| cuDNN | 9.3 | [____] |
-| TensorRT | 10.3 | [____] |
-| VPI | 3.2 | [____] |
-| Python | 3.10 | [____] |
-| Boot media | microSD (Super SD-card image) | [____] |
+| JetPack | 6.2.1 | [6.2.1] |
+| Jetson Linux (L4T) | 36.4.4 | [] |
+| OS / kernel | Ubuntu 22.04 / Linux 5.15 | [Ubuntu 22.04 Jammy Jellyfish] |
+| CUDA | 12.6 | [12.6.8] |
+| cuDNN | 9.3 | [9.3.0] |
+| TensorRT | 10.3 | [10.3.0.30] |
+| VPI | 3.2 | [3.2.4.0] |
+| Python | 3.10 | [3.10.12] |
+| Boot media | microSD (Super SD-card image) | [microSD] |
 | jetson-inference commit/tag | — | [____] |
 | jetson-stats (jtop) | — | [____] |
 | "Super" MAXN mode available? | **Yes** (JP 6.1+; you're on 6.2.1) | confirm mode 2 present: [____] |
+
+![jetson-release-output](jetson_release_output.png)
+![stats](image_1.png)
+![stats_2](image_2.png)
 
 > **JP 6.2.1 compatibility notes (read before setup):**
 > - **TensorRT 10.3.** The TRT 8 → 10 API changed substantially, so older tutorials/scripts written for TRT 8 may not compile. `trtexec` itself and all flags used in this paper are stable; it lives at `/usr/src/tensorrt/bin/trtexec`.
@@ -417,6 +420,12 @@ torch.onnx.export(m, torch.randn(1,3,224,224), "resnet50.onnx",
 # YOLOv8 -> ONNX (host, with ultralytics installed)
 yolo export model=yolov8n.pt format=onnx opset=13 imgsz=640
 ```
+
+**A.7 (Optional) - Connect via SSH**
+Connecting all of the USB peripherals (mouse, keyboard, monitor) can be a little cumbersome everytime diagnostics need to be collected or libraries need to be managed. We can remotely ssh into the ubuntu environment from simply connecting power to the board, connect it to the WiFi, finding the correct IP - for the jetson-nano, then via terminal use the following command
+> ssh < user >@< IP address > 
+
+Input password when prompted, then you should have remote access to the jetson-nano
 
 ---
 
