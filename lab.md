@@ -52,7 +52,7 @@ Given a fixed edge platform (Jetson Orin Nano 8GB Super) and a fixed sensor (USB
 ### 2.1 The Jetson Orin Nano platform
 The Jetson Orin Nano 8GB integrates a 6-core ARM Cortex-A78AE CPU and a 1024-core **Ampere** GPU with **32 third-generation Tensor Cores** on a shared-memory SoC, with 8 GB of 128-bit LPDDR5. The "Super" configuration raises rated INT8 performance to ~67 TOPS.:
 
-![orin-nano-image](IMG_3419.jpeg)
+![orin-nano-image](images/IMG_3419.jpeg)
 
 | Property | Value (fill / confirm from your device) |
 |---|---|
@@ -103,7 +103,7 @@ TensorRT compiles a network into an optimized "engine" for a target precision. O
 | Cooling | [built-in fan] |
 | Host PC (for ONNX export, optional) | [Surface Pro 11] |
 
-![materials](IMG_3469.jpeg)
+![materials](images/IMG_3469.jpeg)
 
 > ⚠️ **Power caveat:** an undersized supply can brown out under MAXN "Super" and silently corrupt results. Use a supply with headroom above the mode's rated draw, and record it — it is a confound.
 
@@ -142,9 +142,9 @@ sudo nvpmodel -q --verbose
 | jetson-stats (jtop) | — | [____] |
 | "Super" MAXN mode available? | **Yes** (JP 6.1+; you're on 6.2.1) | confirm mode 2 present: [____] |
 
-![jetson-release-output](jetson_release_output.png)
-![stats](image_1.png)
-![stats_2](image_2.png)
+![jetson-release-output](images/jetson_release_output.png)
+![stats](images/image_1.png)
+![stats_2](images/image_2.png)
 
 > **JP 6.2.1 compatibility notes (read before setup):**
 > - **TensorRT 10.3.** The TRT 8 → 10 API changed substantially, so older tutorials/scripts written for TRT 8 may not compile. `trtexec` itself and all flags used in this paper are stable; it lives at `/usr/src/tensorrt/bin/trtexec`.
