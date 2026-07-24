@@ -479,6 +479,20 @@ $TRTEXEC --onnx=resnet50.onnx --best --iterations=1000 --avgRuns=100 --warmUp=20
 ```
 Record from each log: `mean`, `median`, `percentile(95/99)` GPU latency, and `Throughput (qps)`.
 
+**Flag breakdown — and why each was chosen** (these implement the §5.2 rigor rules, they are not defaults):
+
+| Flag / part | What it does | Why this value |
+|---|---|---|
+| `--onnx=<model>.onnx` | model to compile; trtexec builds a **TensorRT engine** from it and auto-loads the paired `.onnx.data` weights | the model under test (IV1) |
+| `--fp16` / `--int8` / *(none)* / `--best` | **build-time precision** — the engine is compiled for that numeric type (Tensor-Core FP16 / INT8, or FP32 reference; `--best` lets TRT pick fastest per layer) | this is the precision IV2; each produces a *different* engine |
+| `--warmUp=2000` | discard the first **2000 ms** before timing | §5.2 rule 1 — lets clocks ramp and caches fill so cold-start doesn't skew results |
+| `--iterations=1000` | at least **1000** timed inferences | §5.2 rule 2 — sample size N ≥ 1000 |
+| `--avgRuns=100` | average reported latency over windows of 100 | smooths per-inference noise |
+| `2>&1` | merge stderr into stdout | trtexec prints its summary to **stderr**; without this `tee` would miss the numbers |
+| `\| tee <file>.log` | print to screen **and** save to file | keeps a raw log to parse and archive (Appendix D) |
+
+> Precision is a **build-time** choice: `--fp16` and `--int8` produce physically different engines, which is why each precision is a separate run (and why "engine build time" is a per-run metric). Latency is read from the **GPU Compute Time** line (pure kernel time), *not* the "Latency" line (which includes host↔device copies).
+
 **B.2 Power + memory logger (run in a second terminal during any benchmark)**
 ```bash
 # Logs total module power, RAM, GPU load every 100 ms
