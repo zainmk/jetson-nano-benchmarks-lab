@@ -68,7 +68,7 @@ The Jetson Orin Nano 8GB integrates a 6-core ARM Cortex-A78AE CPU and a 1024-cor
 | Carrier board I/O | 2× MIPI CSI (4-lane), 4× USB 3.2 Type-A, DisplayPort, Gigabit Ethernet, M.2 (NVMe + Wi-Fi) |
 | Storage (microSD) | [jetson-orin-nano-devkit-super-SD-image_JP6.2.1](https://developer.nvidia.com/embedded/jetpack-sdk-62) kit boots from microSD or an NVMe SSD in the M.2 Key-M slot |
 | Cooling | Stock active heatsink + fan included with the kit — confirm: [Y] |
-| Ambient temperature during tests (°C) | [41.2 - via jetson-nano gui] |
+| Ambient temperature during tests (°C) | 21 (room air, external thermometer at fan intake) |
 
 > **Note on JetPack:** the Orin Nano runs **JetPack 5.x or 6.x** (Ubuntu 20.04/22.04, Python 3.8/3.10, CUDA 12.x, TensorRT 8.6/10.x). The **"Super" 67-TOPS mode is a firmware/power-mode unlock, not new silicon** — it requires **JetPack 6.1 (rev 1) or newer (6.2)**, which adds the high-clock MAXN power mode. On earlier JetPack the same board runs at lower clocks and delivers the original 40 TOPS. Per NVIDIA's documentation the MAXN "Super" mode is **`nvpmodel` mode 2** on this kit — but confirm with `nvpmodel -q --verbose` in §4.2, since IDs can shift between JetPack releases. Whether "Super" is available at all depends on your JetPack version, and confirming it is part of the experiment.
 
@@ -108,11 +108,6 @@ TensorRT compiles a network into an optimized "engine" for a target precision. O
 > ⚠️ **Power caveat:** an undersized supply can brown out under MAXN "Super" and silently corrupt results. Use a supply with headroom above the mode's rated draw, and record it — it is a confound.
 
 ### 4.2 Software
-🧪 **DO THIS** — run and paste the output:
-
-> Z - On a fresh OS install of the jetson-nano, the environment may not have 'pip' installed yet, therefore will require running the following commands, before the one below...  
-`sudo apt update`  
-`sudo apt install python3-pip`  
 
 ```bash
 # L4T / JetPack
@@ -130,7 +125,7 @@ sudo nvpmodel -q --verbose
 | Component | Expected on JP 6.2.1 | Confirmed on your unit (paste) |
 |---|---|---|
 | JetPack | 6.2.1 | [6.2.1] |
-| Jetson Linux (L4T) | 36.4.4 | [] |
+| Jetson Linux (L4T) | 36.4.4 | 36.4.7 |
 | OS / kernel | Ubuntu 22.04 / Linux 5.15 | [Ubuntu 22.04 Jammy Jellyfish] |
 | CUDA | 12.6 | [12.6.8] |
 | cuDNN | 9.3 | [9.3.0] |
@@ -138,9 +133,9 @@ sudo nvpmodel -q --verbose
 | VPI | 3.2 | [3.2.4.0] |
 | Python | 3.10 | [3.10.12] |
 | Boot media | microSD (Super SD-card image) | [microSD] |
-| jetson-inference commit/tag | — | [____] |
+| jetson-inference commit/tag | — | container `dustynv/jetson-inference:r36.3.0` (no r36.4.x image published; runs on this r36.4.7 host via the NVIDIA container runtime) |
 | jetson-stats (jtop) | — | [____] |
-| "Super" MAXN mode available? | **Yes** (JP 6.1+; you're on 6.2.1) | confirm mode 2 present: [____] |
+| "Super" MAXN mode available? | **Yes** (JP 6.1+; you're on 6.2.1) | **Yes — `MAXN_SUPER` = mode 2.** Confirmed map: 0=15W, 1=25W (default), 2=MAXN_SUPER, 3=7W |
 
 ![jetson-release-output](images/jetson_release_output.png)
 ![stats](images/image_1.png)
@@ -208,22 +203,22 @@ A **factorial design**. Independent variables (IVs), dependent variables (DVs), 
 **Controlled variables (hold constant, and say so):** ambient temperature, same physical camera / lighting / scene, same supply, background processes minimized (optionally drop the GUI with `sudo systemctl isolate multi-user.target` — record if you do), fixed warm-up and iteration counts, and a cooldown between runs so each starts from a comparable thermal state.
 
 ### 5.2 Measurement methodology (rigor rules)
-1. **Warm-up:** discard the first W = [____ suggest 200] inferences (first calls trigger engine load / cold caches; Ampere clocks also ramp).
-2. **Sample size:** measure N = [____ suggest ≥1000] inferences per configuration.
-3. **Repeats:** run each configuration R = [____ suggest 3] independent times (fresh process, cooldown between) to capture between-run variance.
+1. **Warm-up:** discard the first W = [200] inferences (first calls trigger engine load / cold caches; Ampere clocks also ramp).
+2. **Sample size:** measure N = [≥1000] inferences per configuration.
+3. **Repeats:** run each configuration R = [3] independent times (fresh process, cooldown between) to capture between-run variance.
 4. **Report distributions, not just means:** median + IQR (or mean ± SD), plus p95/p99 latency. Real-time systems care about tail latency.
 5. **Synchronize the GPU** before/after timing (CUDA is asynchronous) — the harness in Appendix B does this.
-6. **Thermal control:** log temperature throughout; flag runs where θ exceeds [____ °C] or a throttle event occurs.
+6. **Thermal control:** log temperature throughout; flag runs where θ exceeds **[80] °C** or a throttle event occurs. (Confirm your board's actual throttle trip points with `cat /sys/devices/virtual/thermal/thermal_zone*/trip_point_0_temp` and set this a few °C below the lowest; Orin Tj_max is 100 °C.)
 7. **One variable at a time** when attributing an effect; the factorial also lets you inspect interactions (e.g., does INT8's benefit shrink in the 7 W mode?).
 
 ### 5.3 Accuracy protocol
-- **Classification (Track A):** evaluate top-1/top-5 on a fixed subset of [____ e.g., 500–1000] ImageNet-val images (list exact IDs in Appendix C). Compare FP32 vs FP16 vs INT8 on the *same* images — INT8 accuracy depends on calibration quality, so this is the key accuracy comparison.
+- **Classification (Track A):** evaluate top-1/top-5 on a fixed subset of [500] ImageNet-val images (list exact IDs in Appendix C). Compare FP32 vs FP16 vs INT8 on the *same* images — INT8 accuracy depends on calibration quality, so this is the key accuracy comparison.
 - **Detection (Track B):** report mAP@0.5 on a fixed COCO-val subset if you can build the pipeline, or — if full mAP is out of scope — a qualitative proxy (mean detection confidence on a fixed labeled clip; counts of correct / missed / false detections on a hand-labeled [____]-frame clip), clearly stated as a limitation.
 
 ### 5.4 Procedure (run order)
 🧪 **DO THIS** for each configuration:
 1. Set power mode (Appendix A.4) and record it.
-2. Cool down for [____ e.g., 60] s; record starting θ.
+2. Cool down for **[60] s** (or until θ returns to within ~5 °C of idle); record starting θ.
 3. Start the power logger (Appendix B.2).
 4. Run the harness with W warm-up + N measured inferences (Appendix B).
 5. Stop the logger; parse mean/peak power and RAM.
@@ -376,10 +371,43 @@ On JetPack 6.2.1 the reliable route is the maintained Docker container (avoids T
 ```bash
 git clone --recursive --depth=1 https://github.com/dusty-nv/jetson-inference
 cd jetson-inference
-docker/run.sh          # pulls the container matched to your L4T; mounts data/ for models
-# On first run, the model-download selector appears — pick the SSD models in §4.3.
+# NOTE: bare `docker/run.sh` auto-picks a tag matching L4T (r36.4.7), which is NOT published.
+# The newest jetson-inference image is r36.3.0; pin it explicitly (runs fine on this r36.4.7 host):
+docker/run.sh --container dustynv/jetson-inference:r36.3.0   # mounts data/ for models
 # Inside the container, the imagenet/detectnet tools and Python modules are ready to use.
+# The prompt changes to  root@<host>:/jetson-inference#  when you are inside.
+# To RE-ENTER later, just run the same command again (a fresh --rm container; your
+# downloaded models persist in the host-mounted data/ volume).
 ```
+
+**Downloading the models.** In the container the download selector does **not** auto-appear (that only happens during a source build) — launch it manually:
+```bash
+cd /jetson-inference/tools && ./download-models.sh
+# Menu keys:  ↑/↓ move · SPACE toggle (a * marks selected) · TAB to <OK> · ENTER to confirm+download
+```
+Select the models this study needs (see §4.3 for the A/B mapping):
+
+| Select in menu | ID | Needed for |
+|---|---|---|
+| ResNet-18 | A2 | Track A **accuracy** (Table 3) via `imagenet` |
+| ResNet-50 | A3 | Track A **accuracy** (Table 3) via `imagenet` |
+| VGG-16 | A5 | Track A **accuracy** (Table 3) via `imagenet` |
+| SSD-Mobilenet-v2 | B1 | Track B **detection** pipeline (Exp. B) |
+| SSD-Inception-v2 | B2 | Track B detection (optional heavier point) |
+
+> These container copies are used **only for the accuracy runs and the SSD camera pipeline.**
+> Track A **timing** models (ResNet-18/50, VGG-16) and the YOLOv8 detectors are **host ONNX
+> exports** (A.6), not downloaded here.
+
+Non-interactive alternative (skips the menu):
+```bash
+./download-models.sh ResNet-18 ResNet-50 VGG-16 SSD-Mobilenet-v2 SSD-Inception-v2
+```
+Verify what actually landed (downloaded models appear as **directories**, not just label files):
+```bash
+ls -d /jetson-inference/data/networks/*/
+```
+
 Source-build alternative (only if you prefer host install and are prepared for TRT 10 quirks):
 ```bash
 cd jetson-inference && mkdir build && cd build
@@ -392,18 +420,20 @@ ls /dev/video*                 # note the device, e.g. /dev/video0
 v4l2-ctl -d /dev/video0 --list-formats-ext   # record supported res/FPS/format (MJPG vs YUYV)
 ```
 
-**A.4 Power modes / clocks (verify IDs on your unit — they vary by JetPack)**
+**A.4 Power modes / clocks (verified)**
 ```bash
-sudo nvpmodel -q --verbose     # LIST the modes and their IDs; record the mapping!
-# On this kit (JetPack 6.1+), NVIDIA documents these IDs — CONFIRM against the output above:
-sudo nvpmodel -m 2             # MAXN "Super" (~25W, the 67-TOPS mode)
-sudo nvpmodel -m 1             # 15 W
-sudo nvpmodel -m 0             # 7 W
-# (If your -q output disagrees, use the IDs it reports and note the discrepancy.)
+sudo nvpmodel -p --verbose     # LIST all modes and their IDs; record the mapping!
+# CONFIRMED on this unit (JP 6.2.1) via `nvpmodel -p --verbose`:
+sudo nvpmodel -m 0             # 15 W  (CPU 1.50 GHz, GPU 612 MHz, EMC 2133 MHz)
+sudo nvpmodel -m 1             # 25 W  (default at boot; CPU 1.34 GHz, GPU 918 MHz, EMC 3199 MHz)
+sudo nvpmodel -m 2             # MAXN "Super" — clocks uncapped, the 67-TOPS mode
+sudo nvpmodel -m 3             # 7 W   (only 4 CPU cores online, extra TPCs gated)
+# NOTE: IDs differ from NVIDIA's generic docs — 15W/7W are NOT modes 1/0 here.
+# The three power levels this study uses (§5.1 IV3): 7W = -m 3, 15W = -m 0, MAXN Super = -m 2.
 sudo jetson_clocks             # lock clocks to max for the selected mode
 sudo jetson_clocks --show
 ```
-> The mode-ID↔wattage mapping is **not** fixed across JetPack versions — always read it from `nvpmodel -q --verbose` and record it. If no MAXN "Super" mode is listed, your JetPack predates the Super unlock (§4.2); note that as a finding.
+> The mode-ID↔wattage mapping is **not** fixed across JetPack versions — always read it from `nvpmodel -p --verbose` and record it. If no MAXN "Super" mode is listed, your JetPack predates the Super unlock (§4.2); note that as a finding.
 
 **A.5 INT8 / sparsity note (this is the interesting precision on Ampere)**
 INT8 needs a calibration cache built from representative images; without it, accuracy drops sharply. With `trtexec`, use `--int8` (add `--fp16` to allow mixed fallback, or `--best` to let TensorRT pick the fastest per layer). Structured sparsity: `--sparsity=enable` (requires a 2:4-pruned model to actually benefit). Unlike the old Maxwell Nano, INT8 here is hardware-accelerated and expected to be the fastest precision (H2).
@@ -557,16 +587,28 @@ python3 bench_e2e.py --model ssd-mobilenet-v2 --frames 1000 --tag B1_INT8_SUPER_
 - INT8 calibration set (source + count): [____]
 - Detection clip filename + frame count + hand-labels location: [____]
 
-**C.3 Environment snapshot** (paste `jetson_release` and `nvpmodel -q --verbose`):
+**C.3 Environment snapshot** (paste `jetson_release` and `nvpmodel -p --verbose`):
+
+Confirmed `nvpmodel` power modes (from `nvpmodel -p --verbose`, JP 6.2.1):
+
+| Mode ID | Name | CPU cores | CPU max (GHz) | GPU max (MHz) | EMC max (MHz) | TPC_PG_MASK |
+|---|---|---|---|---|---|---|
+| 0 | 15W | 6 | 1.498 | 612 | 2133 | 240 |
+| 1 | 25W (default) | 6 | 1.344 | 918 | 3199 | 240 |
+| 2 | MAXN_SUPER | 6 | uncapped | uncapped | uncapped | 240 |
+| 3 | 7W | 4 | 0.960 | 408 | 2133 | 252 |
+
+> Notes: `MAXN_SUPER` (mode 2) removes all clock caps (config value `9223372036854775807` = int64 max); read the actual locked values with `sudo jetson_clocks --show`. 15 W runs the CPU *faster* than 25 W (1.498 vs 1.344 GHz) but caps GPU and memory far lower — for GPU inference, 25 W ≫ 15 W. 7 W additionally power-gates 2 CPU cores and extra GPU TPCs (mask 252 vs 240).
+
 ```
-[____]
+[paste raw `jetson_release` output here]
 ```
 
 ---
 
 ## Appendix D — Reproducibility checklist
 - [ ] Exact JetPack/CUDA/TensorRT/jetson-inference versions recorded (§4.2)
-- [ ] Confirmed whether MAXN "Super" mode is available; mode-ID↔wattage mapping recorded
+- [x] Confirmed whether MAXN "Super" mode is available; mode-ID↔wattage mapping recorded (C.3: 0=15W, 1=25W, 2=MAXN_SUPER, 3=7W)
 - [ ] Power supply type/rating recorded; headroom above MAXN Super confirmed
 - [ ] Warm-up and N fixed and stated (W=[__], N=[__], R=[__])
 - [ ] INT8 calibration set documented (C.2)
