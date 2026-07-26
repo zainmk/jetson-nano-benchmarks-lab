@@ -507,6 +507,33 @@ Record from each log: `mean`, `median`, `percentile(95/99)` GPU latency, and `Th
 
 > Precision is a **build-time** choice: `--fp16` and `--int8` produce physically different engines, which is why each precision is a separate run (and why "engine build time" is a per-run metric). Latency is read from the **GPU Compute Time** line (pure kernel time), *not* the "Latency" line (which includes host↔device copies).
 
+**B.1a Automated driver (`run_config.sh`) + full Experiment A sweep**
+
+In practice each run is driven by `scripts/run_config.sh <model> <precision> <mode> <run#>`, which executes the whole §5.4 procedure for one configuration: set + lock the power mode (`nvpmodel -m` per the confirmed ID map, then `jetson_clocks`) → cooldown → record start θ → start `tegrastats` logging → run the `trtexec` command above → stop logging → parse both logs → append one row to `results_expA.csv`. Logs are named `<model>_<precision>_<mode>_run<N>.{trtexec,tegrastats}.log`. Prereqs on the Jetson: `~/models/<model>.onnx`, `~/parse_tegrastats.py` (B.2), and cached sudo (`sudo -v`).
+
+The full Experiment A dataset was collected by looping that driver. Run inside `tmux` (survives SSH disconnects over the ~2 h batch):
+
+```bash
+# Table 1 — architecture x precision at MAXN Super  (3 models x 3 precisions x R=3 = 27 runs)
+for model in resnet18 resnet50 vgg16; do
+  for prec in fp32 fp16 int8; do
+    for r in 1 2 3; do
+      ~/run_config.sh $model $prec maxn $r
+    done
+  done
+done
+
+# Table 2 — power-mode sweep for the H5 test  (ResNet-50 INT8 across 7 W / 15 W; MAXN already
+# collected above)  (1 model x 1 precision x 2 modes x R=3 = 6 runs)
+for mode in 7w 15w; do
+  for r in 1 2 3; do
+    ~/run_config.sh resnet50 int8 $mode $r
+  done
+done
+```
+
+> Power-mode arguments map to the confirmed `nvpmodel` IDs (§4.2 / A.4): `7w`=3, `15w`=0, `25w`=1, `maxn`=2. R = 3 repeats per configuration (§5.2). ~33 runs total for Experiment A timing + power.
+
 **B.2 Power + memory logger (run in a second terminal during any benchmark)**
 ```bash
 # Logs total module power, RAM, GPU load every 100 ms
