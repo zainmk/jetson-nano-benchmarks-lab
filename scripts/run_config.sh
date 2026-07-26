@@ -95,8 +95,9 @@ wait "$TEGRA_PID" 2>/dev/null || true
 
 # ---- 6. extract metrics ------------------------------------------------------
 set +e   # a missing field should leave a blank cell, not kill the run
-# trtexec: use GPU Compute Time (pure kernel), not the "Latency" line
-gpu_line=$(grep "GPU Compute Time:" "$TRT_LOG" | tail -1)
+# trtexec: use GPU Compute Time (pure kernel), not the "Latency" line.
+# NB: also matches "Total GPU Compute Time:" — filter to the detailed line via "median".
+gpu_line=$(grep "GPU Compute Time:" "$TRT_LOG" | grep "median" | tail -1)
 med=$(grep -oP 'median = \K[0-9.]+'          <<< "$gpu_line")
 p95=$(grep -oP 'percentile\(95%\) = \K[0-9.]+' <<< "$gpu_line")
 p99=$(grep -oP 'percentile\(99%\) = \K[0-9.]+' <<< "$gpu_line")
