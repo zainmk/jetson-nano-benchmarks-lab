@@ -321,6 +321,7 @@ Randomize or counterbalance run order across configurations so thermal drift doe
 - **Accuracy proxy** in Track B is not full mAP (state impact).
 - **Single device** — no unit-to-unit variance; results may not generalize to other Orin Nanos or to Orin NX/AGX (which additionally have DLA).
 - **Power measurement** via on-board INA sensors (`VDD_IN`) is coarse and board/JetPack-dependent; field names differ across revisions — verify against your `tegrastats` output.
+- **Thermal-zone reads are unreliable** — several Orin `thermal_zone*/temp` sysfs nodes intermittently return `EAGAIN` ("Resource temporarily unavailable"). Start-temperature reads therefore tolerate failures and take the hottest *readable* zone; per-run peak θ is taken from `tegrastats`' `tj@` field instead, which is stable.
 - **Camera as confound** — USB bandwidth / MJPG decode can cap FPS independent of the model.
 - Other: [____]
 
@@ -456,6 +457,19 @@ Connecting all of the USB peripherals (mouse, keyboard, monitor) can be a little
 > ssh < user >@< IP address > 
 
 Input password when prompted, then you should have remote access to the jetson-nano
+
+**A.8 (Optional) - Transfer files with `scp`**
+`scp` (secure copy, ships with SSH) copies files between the host and the board over the same SSH connection — used here to push ONNX models to the Orin and pull benchmark logs back to the host for archiving. Syntax is `scp <source> <destination>`, where the remote side is written `<user>@<IP>:<path>`.
+```bash
+# Host -> Jetson  (send exported ONNX models)
+scp resnet18.onnx resnet50.onnx vgg16.onnx <user>@<IP>:~/models/
+
+# Jetson -> Host  (pull a benchmark log back; "." = current host directory)
+scp <user>@<IP>:~/resnet50_fp16_run1.log ./data/raw/expA/
+
+# Pull a whole folder of logs at once
+scp -r <user>@<IP>:~/logs ./data/raw/expA/
+```
 
 ---
 
