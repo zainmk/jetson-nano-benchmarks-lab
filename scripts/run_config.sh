@@ -64,9 +64,23 @@ TEGRA_LOG="$LOG_DIR/${RUN_ID}.tegrastats.log"
 echo "=== $RUN_ID ==="
 
 # ---- 1. set + lock the operating point ---------------------------------------
-sudo nvpmodel -m "$NVP_ID" >/dev/null
+# Only switch if not already in the target mode. 7 W (mode 3) requires a REBOOT to
+# apply and prompts interactively (YES/yes) — auto-switching into it hangs a
+# non-interactive run, so refuse and tell the user to set it manually first (see A.4).
+# After a manual reboot into 7 W, this guard sees we're already in mode 3 and skips
+# the switch, so the 7 W repeats run cleanly.
+current_id=$(sudo nvpmodel -q 2>/dev/null | grep -oE '^[0-9]+$' | head -1 || true)
+if [ "$current_id" = "$NVP_ID" ]; then
+    echo "already in power mode $MODE (id $NVP_ID) — skipping switch"
+elif [ "$NVP_ID" = "3" ]; then
+    echo "ERROR: 7W (mode 3) needs a reboot to apply; set it manually first:" >&2
+    echo "  sudo nvpmodel -m 3   # type YES, let it reboot, then re-run this script" >&2
+    exit 1
+else
+    sudo nvpmodel -m "$NVP_ID"
+fi
 sudo jetson_clocks
-echo "power mode set:"; sudo nvpmodel -q | tail -n +1
+echo "power mode set:"; sudo nvpmodel -q
 
 # ---- 2. cooldown + start temperature -----------------------------------------
 echo "cooldown ${COOLDOWN}s..."

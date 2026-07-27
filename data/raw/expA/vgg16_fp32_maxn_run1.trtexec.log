@@ -1,0 +1,170 @@
+&&&& RUNNING TensorRT.trtexec [TensorRT v100300] # /usr/src/tensorrt/bin/trtexec --onnx=/home/zain/models/vgg16.onnx --iterations=1000 --avgRuns=100 --warmUp=2000
+[07/26/2026-16:27:09] [I] === Model Options ===
+[07/26/2026-16:27:09] [I] Format: ONNX
+[07/26/2026-16:27:09] [I] Model: /home/zain/models/vgg16.onnx
+[07/26/2026-16:27:09] [I] Output:
+[07/26/2026-16:27:09] [I] === Build Options ===
+[07/26/2026-16:27:09] [I] Memory Pools: workspace: default, dlaSRAM: default, dlaLocalDRAM: default, dlaGlobalDRAM: default, tacticSharedMem: default
+[07/26/2026-16:27:09] [I] avgTiming: 8
+[07/26/2026-16:27:09] [I] Precision: FP32
+[07/26/2026-16:27:09] [I] LayerPrecisions: 
+[07/26/2026-16:27:09] [I] Layer Device Types: 
+[07/26/2026-16:27:09] [I] Calibration: 
+[07/26/2026-16:27:09] [I] Refit: Disabled
+[07/26/2026-16:27:09] [I] Strip weights: Disabled
+[07/26/2026-16:27:09] [I] Version Compatible: Disabled
+[07/26/2026-16:27:09] [I] ONNX Plugin InstanceNorm: Disabled
+[07/26/2026-16:27:09] [I] TensorRT runtime: full
+[07/26/2026-16:27:09] [I] Lean DLL Path: 
+[07/26/2026-16:27:09] [I] Tempfile Controls: { in_memory: allow, temporary: allow }
+[07/26/2026-16:27:09] [I] Exclude Lean Runtime: Disabled
+[07/26/2026-16:27:09] [I] Sparsity: Disabled
+[07/26/2026-16:27:09] [I] Safe mode: Disabled
+[07/26/2026-16:27:09] [I] Build DLA standalone loadable: Disabled
+[07/26/2026-16:27:09] [I] Allow GPU fallback for DLA: Disabled
+[07/26/2026-16:27:09] [I] DirectIO mode: Disabled
+[07/26/2026-16:27:09] [I] Restricted mode: Disabled
+[07/26/2026-16:27:09] [I] Skip inference: Disabled
+[07/26/2026-16:27:09] [I] Save engine: 
+[07/26/2026-16:27:09] [I] Load engine: 
+[07/26/2026-16:27:09] [I] Profiling verbosity: 0
+[07/26/2026-16:27:09] [I] Tactic sources: Using default tactic sources
+[07/26/2026-16:27:09] [I] timingCacheMode: local
+[07/26/2026-16:27:09] [I] timingCacheFile: 
+[07/26/2026-16:27:09] [I] Enable Compilation Cache: Enabled
+[07/26/2026-16:27:09] [I] errorOnTimingCacheMiss: Disabled
+[07/26/2026-16:27:09] [I] Preview Features: Use default preview flags.
+[07/26/2026-16:27:09] [I] MaxAuxStreams: -1
+[07/26/2026-16:27:09] [I] BuilderOptimizationLevel: -1
+[07/26/2026-16:27:09] [I] Calibration Profile Index: 0
+[07/26/2026-16:27:09] [I] Weight Streaming: Disabled
+[07/26/2026-16:27:09] [I] Runtime Platform: Same As Build
+[07/26/2026-16:27:09] [I] Debug Tensors: 
+[07/26/2026-16:27:09] [I] Input(s)s format: fp32:CHW
+[07/26/2026-16:27:09] [I] Output(s)s format: fp32:CHW
+[07/26/2026-16:27:09] [I] Input build shapes: model
+[07/26/2026-16:27:09] [I] Input calibration shapes: model
+[07/26/2026-16:27:09] [I] === System Options ===
+[07/26/2026-16:27:09] [I] Device: 0
+[07/26/2026-16:27:09] [I] DLACore: 
+[07/26/2026-16:27:09] [I] Plugins:
+[07/26/2026-16:27:09] [I] setPluginsToSerialize:
+[07/26/2026-16:27:09] [I] dynamicPlugins:
+[07/26/2026-16:27:09] [I] ignoreParsedPluginLibs: 0
+[07/26/2026-16:27:09] [I] 
+[07/26/2026-16:27:09] [I] === Inference Options ===
+[07/26/2026-16:27:09] [I] Batch: Explicit
+[07/26/2026-16:27:09] [I] Input inference shapes: model
+[07/26/2026-16:27:09] [I] Iterations: 1000
+[07/26/2026-16:27:09] [I] Duration: 3s (+ 2000ms warm up)
+[07/26/2026-16:27:09] [I] Sleep time: 0ms
+[07/26/2026-16:27:09] [I] Idle time: 0ms
+[07/26/2026-16:27:09] [I] Inference Streams: 1
+[07/26/2026-16:27:09] [I] ExposeDMA: Disabled
+[07/26/2026-16:27:09] [I] Data transfers: Enabled
+[07/26/2026-16:27:09] [I] Spin-wait: Disabled
+[07/26/2026-16:27:09] [I] Multithreading: Disabled
+[07/26/2026-16:27:09] [I] CUDA Graph: Disabled
+[07/26/2026-16:27:09] [I] Separate profiling: Disabled
+[07/26/2026-16:27:09] [I] Time Deserialize: Disabled
+[07/26/2026-16:27:09] [I] Time Refit: Disabled
+[07/26/2026-16:27:09] [I] NVTX verbosity: 0
+[07/26/2026-16:27:09] [I] Persistent Cache Ratio: 0
+[07/26/2026-16:27:09] [I] Optimization Profile Index: 0
+[07/26/2026-16:27:09] [I] Weight Streaming Budget: 100.000000%
+[07/26/2026-16:27:09] [I] Inputs:
+[07/26/2026-16:27:09] [I] Debug Tensor Save Destinations:
+[07/26/2026-16:27:09] [I] === Reporting Options ===
+[07/26/2026-16:27:09] [I] Verbose: Disabled
+[07/26/2026-16:27:09] [I] Averages: 100 inferences
+[07/26/2026-16:27:09] [I] Percentiles: 90,95,99
+[07/26/2026-16:27:09] [I] Dump refittable layers:Disabled
+[07/26/2026-16:27:09] [I] Dump output: Disabled
+[07/26/2026-16:27:09] [I] Profile: Disabled
+[07/26/2026-16:27:09] [I] Export timing to JSON file: 
+[07/26/2026-16:27:09] [I] Export output to JSON file: 
+[07/26/2026-16:27:09] [I] Export profile to JSON file: 
+[07/26/2026-16:27:09] [I] 
+[07/26/2026-16:27:09] [I] === Device Information ===
+[07/26/2026-16:27:09] [I] Available Devices: 
+[07/26/2026-16:27:09] [I]   Device 0: "Orin" UUID: GPU-7a69094a-89cd-55a5-a5dc-a50bf7f8ee64
+[07/26/2026-16:27:09] [I] Selected Device: Orin
+[07/26/2026-16:27:09] [I] Selected Device ID: 0
+[07/26/2026-16:27:09] [I] Selected Device UUID: GPU-7a69094a-89cd-55a5-a5dc-a50bf7f8ee64
+[07/26/2026-16:27:09] [I] Compute Capability: 8.7
+[07/26/2026-16:27:09] [I] SMs: 8
+[07/26/2026-16:27:09] [I] Device Global Memory: 7619 MiB
+[07/26/2026-16:27:09] [I] Shared Memory per SM: 164 KiB
+[07/26/2026-16:27:09] [I] Memory Bus Width: 128 bits (ECC disabled)
+[07/26/2026-16:27:09] [I] Application Compute Clock Rate: 1.02 GHz
+[07/26/2026-16:27:09] [I] Application Memory Clock Rate: 1.02 GHz
+[07/26/2026-16:27:09] [I] 
+[07/26/2026-16:27:09] [I] Note: The application clock rates do not reflect the actual clock rates that the GPU is currently running at.
+[07/26/2026-16:27:09] [I] 
+[07/26/2026-16:27:09] [I] TensorRT version: 10.3.0
+[07/26/2026-16:27:09] [I] Loading standard plugins
+[07/26/2026-16:27:09] [I] [TRT] [MemUsageChange] Init CUDA: CPU +2, GPU +0, now: CPU 31, GPU 2975 (MiB)
+[07/26/2026-16:27:11] [I] [TRT] [MemUsageChange] Init builder kernel library: CPU +928, GPU +1047, now: CPU 1002, GPU 4067 (MiB)
+[07/26/2026-16:27:11] [I] Start parsing network model.
+[07/26/2026-16:27:11] [I] [TRT] ----------------------------------------------------------------
+[07/26/2026-16:27:11] [I] [TRT] Input filename:   /home/zain/models/vgg16.onnx
+[07/26/2026-16:27:11] [I] [TRT] ONNX IR version:  0.0.10
+[07/26/2026-16:27:11] [I] [TRT] Opset version:    18
+[07/26/2026-16:27:11] [I] [TRT] Producer name:    pytorch
+[07/26/2026-16:27:11] [I] [TRT] Producer version: 2.13.0+cpu
+[07/26/2026-16:27:11] [I] [TRT] Domain:           
+[07/26/2026-16:27:11] [I] [TRT] Model version:    0
+[07/26/2026-16:27:11] [I] [TRT] Doc string:       
+[07/26/2026-16:27:11] [I] [TRT] ----------------------------------------------------------------
+[07/26/2026-16:27:18] [I] Finished parsing network model. Parse time: 6.72364
+[07/26/2026-16:27:18] [I] [TRT] Local timing cache in use. Profiling results in this builder pass will not be stored.
+[07/26/2026-16:27:56] [I] [TRT] Detected 1 inputs and 1 output network tensors.
+[07/26/2026-16:27:57] [I] [TRT] Total Host Persistent Memory: 95200
+[07/26/2026-16:27:57] [I] [TRT] Total Device Persistent Memory: 0
+[07/26/2026-16:27:57] [I] [TRT] Total Scratch Memory: 32768
+[07/26/2026-16:27:57] [I] [TRT] [BlockAssignment] Started assigning block shifts. This will take 20 steps to complete.
+[07/26/2026-16:27:57] [I] [TRT] [BlockAssignment] Algorithm ShiftNTopDown took 0.136513ms to assign 2 blocks to 20 nodes requiring 25690112 bytes.
+[07/26/2026-16:27:57] [I] [TRT] Total Activation Memory: 25690112
+[07/26/2026-16:27:57] [I] [TRT] Total Weights Memory: 553437440
+[07/26/2026-16:27:57] [I] [TRT] Engine generation completed in 39.0146 seconds.
+[07/26/2026-16:27:57] [I] [TRT] [MemUsageStats] Peak memory usage of TRT CPU/GPU memory allocators: CPU 9 MiB, GPU 535 MiB
+[07/26/2026-16:27:57] [I] [TRT] [MemUsageStats] Peak memory usage during Engine building and serialization: CPU: 3110 MiB
+[07/26/2026-16:27:57] [I] Engine built in 39.2664 sec.
+[07/26/2026-16:27:57] [I] Created engine with size: 528.135 MiB
+[07/26/2026-16:27:57] [I] [TRT] Loaded engine size: 528 MiB
+[07/26/2026-16:27:57] [I] Engine deserialized in 0.115096 sec.
+[07/26/2026-16:27:57] [I] [TRT] [MemUsageChange] TensorRT-managed allocation in IExecutionContext creation: CPU +0, GPU +25, now: CPU 0, GPU 552 (MiB)
+[07/26/2026-16:27:57] [I] Setting persistentCacheLimit to 0 bytes.
+[07/26/2026-16:27:57] [I] Created execution context with device memory size: 24.5 MiB
+[07/26/2026-16:27:57] [I] Using random values for input input
+[07/26/2026-16:27:57] [I] Input binding for input with dimensions 1x3x224x224 is created.
+[07/26/2026-16:27:57] [I] Output binding for output with dimensions 1x1000 is created.
+[07/26/2026-16:27:57] [I] Starting inference
+[07/26/2026-16:28:11] [I] Warmup completed 175 queries over 2000 ms
+[07/26/2026-16:28:11] [I] Timing trace has 1000 queries over 11.4744 s
+[07/26/2026-16:28:11] [I] 
+[07/26/2026-16:28:11] [I] === Trace details ===
+[07/26/2026-16:28:11] [I] Trace averages of 100 runs:
+[07/26/2026-16:28:11] [I] Average on 100 runs - GPU latency: 11.4594 ms - Host latency: 11.513 ms (enqueue 0.193804 ms)
+[07/26/2026-16:28:11] [I] Average on 100 runs - GPU latency: 11.4585 ms - Host latency: 11.512 ms (enqueue 0.193413 ms)
+[07/26/2026-16:28:11] [I] Average on 100 runs - GPU latency: 11.4614 ms - Host latency: 11.5148 ms (enqueue 0.193511 ms)
+[07/26/2026-16:28:11] [I] Average on 100 runs - GPU latency: 11.461 ms - Host latency: 11.5151 ms (enqueue 0.192705 ms)
+[07/26/2026-16:28:11] [I] Average on 100 runs - GPU latency: 11.4597 ms - Host latency: 11.5139 ms (enqueue 0.193008 ms)
+[07/26/2026-16:28:11] [I] Average on 100 runs - GPU latency: 11.4595 ms - Host latency: 11.5136 ms (enqueue 0.192607 ms)
+[07/26/2026-16:28:11] [I] Average on 100 runs - GPU latency: 11.4634 ms - Host latency: 11.518 ms (enqueue 0.197598 ms)
+[07/26/2026-16:28:11] [I] Average on 100 runs - GPU latency: 11.4607 ms - Host latency: 11.5156 ms (enqueue 0.196143 ms)
+[07/26/2026-16:28:11] [I] Average on 100 runs - GPU latency: 11.4588 ms - Host latency: 11.5131 ms (enqueue 0.194688 ms)
+[07/26/2026-16:28:11] [I] Average on 100 runs - GPU latency: 11.4603 ms - Host latency: 11.5147 ms (enqueue 0.19501 ms)
+[07/26/2026-16:28:11] [I] 
+[07/26/2026-16:28:11] [I] === Performance summary ===
+[07/26/2026-16:28:11] [I] Throughput: 87.1505 qps
+[07/26/2026-16:28:11] [I] Latency: min = 11.4844 ms, max = 11.5928 ms, mean = 11.5144 ms, median = 11.5137 ms, percentile(90%) = 11.5283 ms, percentile(95%) = 11.5312 ms, percentile(99%) = 11.541 ms
+[07/26/2026-16:28:11] [I] Enqueue Time: min = 0.183105 ms, max = 0.326172 ms, mean = 0.194249 ms, median = 0.192383 ms, percentile(90%) = 0.199463 ms, percentile(95%) = 0.208252 ms, percentile(99%) = 0.231445 ms
+[07/26/2026-16:28:11] [I] H2D Latency: min = 0.0439453 ms, max = 0.0654297 ms, mean = 0.0487897 ms, median = 0.0488281 ms, percentile(90%) = 0.0510254 ms, percentile(95%) = 0.0522461 ms, percentile(99%) = 0.0556641 ms
+[07/26/2026-16:28:11] [I] GPU Compute Time: min = 11.4297 ms, max = 11.5361 ms, mean = 11.4602 ms, median = 11.46 ms, percentile(90%) = 11.4736 ms, percentile(95%) = 11.4771 ms, percentile(99%) = 11.4863 ms
+[07/26/2026-16:28:11] [I] D2H Latency: min = 0.00292969 ms, max = 0.00683594 ms, mean = 0.00534033 ms, median = 0.00537109 ms, percentile(90%) = 0.00585938 ms, percentile(95%) = 0.00610352 ms, percentile(99%) = 0.00683594 ms
+[07/26/2026-16:28:11] [I] Total Host Walltime: 11.4744 s
+[07/26/2026-16:28:11] [I] Total GPU Compute Time: 11.4602 s
+[07/26/2026-16:28:11] [I] Explanations of the performance metrics are printed in the verbose logs.
+[07/26/2026-16:28:11] [I] 
+&&&& PASSED TensorRT.trtexec [TensorRT v100300] # /usr/src/tensorrt/bin/trtexec --onnx=/home/zain/models/vgg16.onnx --iterations=1000 --avgRuns=100 --warmUp=2000

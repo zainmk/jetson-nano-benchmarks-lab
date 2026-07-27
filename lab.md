@@ -428,13 +428,15 @@ sudo nvpmodel -p --verbose     # LIST all modes and their IDs; record the mappin
 sudo nvpmodel -m 0             # 15 W  (CPU 1.50 GHz, GPU 612 MHz, EMC 2133 MHz)
 sudo nvpmodel -m 1             # 25 W  (default at boot; CPU 1.34 GHz, GPU 918 MHz, EMC 3199 MHz)
 sudo nvpmodel -m 2             # MAXN "Super" — clocks uncapped, the 67-TOPS mode
-sudo nvpmodel -m 3             # 7 W   (only 4 CPU cores online, extra TPCs gated)
+sudo nvpmodel -m 3             # 7 W   (only 4 CPU cores online, extra TPCs gated) — REQUIRES REBOOT (see below)
 # NOTE: IDs differ from NVIDIA's generic docs — 15W/7W are NOT modes 1/0 here.
 # The three power levels this study uses (§5.1 IV3): 7W = -m 3, 15W = -m 0, MAXN Super = -m 2.
 sudo jetson_clocks             # lock clocks to max for the selected mode
 sudo jetson_clocks --show
 ```
 > The mode-ID↔wattage mapping is **not** fixed across JetPack versions — always read it from `nvpmodel -p --verbose` and record it. If no MAXN "Super" mode is listed, your JetPack predates the Super unlock (§4.2); note that as a finding.
+
+> ⚠️ **7 W (mode 3) requires a REBOOT to apply — confirmed on this unit.** Because mode 3 changes the number of online CPU cores (6 → 4), `nvpmodel -m 3` prints `Reboot required for changing to this power mode` and an interactive `YES/yes` confirmation prompt; it does **not** switch live. 15 W / 25 W / MAXN switch live (no reboot). **Consequence for automation:** the 7 W runs **cannot** be collected by the batch driver (`run_config.sh` / B.1a) — the hidden prompt (its `nvpmodel` output is redirected to `/dev/null`) causes the run to hang indefinitely waiting on stdin. **7 W must be run manually:** `sudo nvpmodel -m 3` → type `YES` → reboot → confirm `nvpmodel -q` shows mode 3 → run the three repeats → switch back. 15 W and MAXN are fully automatable.
 
 **A.5 INT8 / sparsity note (this is the interesting precision on Ampere)**
 INT8 needs a calibration cache built from representative images; without it, accuracy drops sharply. With `trtexec`, use `--int8` (add `--fp16` to allow mixed fallback, or `--best` to let TensorRT pick the fastest per layer). Structured sparsity: `--sparsity=enable` (requires a 2:4-pruned model to actually benefit). Unlike the old Maxwell Nano, INT8 here is hardware-accelerated and expected to be the fastest precision (H2).
@@ -471,9 +473,31 @@ scp <user>@<IP>:~/resnet50_fp16_run1.log ./data/raw/expA/
 scp -r <user>@<IP>:~/logs ./data/raw/expA/
 ```
 
+**A.9 (Optional) - Long runs with `tmux`**
+The full Experiment A sweep takes ~2 h. A plain SSH session dies if the connection drops (Wi-Fi, laptop sleep, closed window), taking the batch with it. `tmux` runs the work in a session that lives **on the Jetson**, independent of your connection — detach, disconnect, and reattach later with everything still running. Not preinstalled on this image:
+```bash
+sudo apt-get install -y tmux
+```
+Three commands cover all usage:
+```bash
+tmux new -s bench        # create + enter a named session ("bench"); start the batch here
+# detach (leave it running):  press Ctrl-b, release, then press d
+tmux attach -t bench     # re-enter the session later to check progress
+```
+> Fallback without tmux — run the batch detached and log to a file:
+> `nohup ~/run_all.sh > ~/batch.log 2>&1 &` then watch with `tail -f ~/batch.log`.
+> (`tmux` only survives *your* disconnection — the Jetson must stay powered and on the network.)
+
 ---
 
 ## Appendix B — Benchmark harness
+
+**The two core tools — and why both.** Experiment A pairs a *workload* tool with an *observer* tool, run at the same time so each configuration yields both speed and cost:
+
+- **`trtexec`** (ships with TensorRT, at `/usr/src/tensorrt/bin/trtexec`) — the **workload**. It compiles an ONNX model into a TensorRT engine for a chosen precision, then *runs* thousands of inferences and times them. It measures the **model's speed**: latency (median/p95/p99), throughput (qps), and engine-build time. It knows nothing about power.
+- **`tegrastats`** (ships with L4T/JetPack) — the **observer**. It runs no model; it passively samples the whole board every 100 ms and reports **system state**: total power (`VDD_IN`), RAM, GPU utilization (`GR3D_FREQ`), and temperature (`tj`). It knows nothing about the model.
+
+Neither replaces the other: `trtexec` says *how fast*, `tegrastats` says *at what cost*. Running them concurrently over one window lets you combine them — e.g. **energy per inference = mean power (tegrastats) × median latency (trtexec)** — which is why `run_config.sh` (B.1a) starts `tegrastats` logging in the background, then runs `trtexec` in the foreground, producing a paired `.trtexec.log` + `.tegrastats.log` per run. (`jtop`, from jetson-stats, is a live interactive view of the same `tegrastats` data — handy for watching a run, but the logged/parsed path is what feeds the tables.)
 
 **B.1 Compute microbenchmark with `trtexec` (Experiment A)**
 ```bash
@@ -492,6 +516,13 @@ $TRTEXEC --onnx=resnet50.onnx --best --iterations=1000 --avgRuns=100 --warmUp=20
          2>&1 | tee resnet50_best.log
 ```
 Record from each log: `mean`, `median`, `percentile(95/99)` GPU latency, and `Throughput (qps)`.
+
+**Reading the speed metrics — latency (ms) vs throughput (fps).** These are the two ways to express inference speed:
+
+- **Latency (ms)** = time for **one** inference. Lower is better. Answers *"how quickly do I get an answer for one input?"* — the **real-time / responsiveness** question. Reported as a distribution, not a single value: **median** (typical case) plus **p95/p99** (the 95th/99th-percentile *tail* — 95%/99% of inferences finished within this time). Real-time deployments care about the tail, because an occasional slow frame can miss a deadline; a p99 close to the median (as here) means a stable, spike-free engine.
+- **Throughput (fps / qps)** = **how many** inferences complete per second. Higher is better. Answers *"how much work can the device sustain?"* — the **capacity** question.
+
+At batch = 1 (this study) the two are reciprocals: **fps ≈ 1000 / median-latency-ms** (e.g. 1.87 ms → ~533 fps). They carry the same information but frame it differently — latency for responsiveness, throughput for capacity — so both are reported. (With batching or multiple streams they *decouple*: throughput can exceed `1000/latency` because inputs are processed in parallel. Fixing batch = 1 keeps them directly comparable across models/precisions.) Latency here is the **GPU Compute Time** (pure kernel), not the wall-clock "Latency" line, which also includes host↔device copies.
 
 **Flag breakdown — and why each was chosen** (these implement the §5.2 rigor rules, they are not defaults):
 
@@ -532,7 +563,9 @@ for mode in 7w 15w; do
 done
 ```
 
-> Power-mode arguments map to the confirmed `nvpmodel` IDs (§4.2 / A.4): `7w`=3, `15w`=0, `25w`=1, `maxn`=2. R = 3 repeats per configuration (§5.2). ~33 runs total for Experiment A timing + power.
+> Power-mode arguments map to the confirmed `nvpmodel` IDs (§4.2 / A.4): `7w`=3, `15w`=0, `25w`=1, `maxn`=2. R = 3 repeats per configuration (§5.2).
+>
+> ⚠️ **7 W is excluded from the automated loops** — mode 3 requires a reboot to apply (see A.4), so it hangs the non-interactive driver. Collect the 7 W runs **manually** (reboot into mode 3 first, then invoke `run_config.sh resnet50 int8 7w <run#>` for each repeat). The loops above therefore cover the 27 MAXN runs + the 3 × 15 W runs; the 3 × 7 W runs are done by hand. ~33 runs total for Experiment A timing + power.
 
 **B.2 Power + memory logger (run in a second terminal during any benchmark)**
 ```bash
