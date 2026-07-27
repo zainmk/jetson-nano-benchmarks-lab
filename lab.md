@@ -281,7 +281,7 @@ Mean of R = 3 runs. Total board power via `tegrastats` `VDD_IN`; energy = mean P
 **Figure 4.** Throughput vs. power mode 7 W / 15 W / MAXN, with the 1.7× reference line (the H5 test).
 ![Figure 4 — power-mode uplift](images/fig4_power_mode.png)
 
-> Figures generated from `data/results_expA.csv` by `scripts/make_figures.py` (reproducible).
+> Figures summarize the Experiment A results in `data/results_expA.csv`.
 
 ### 6.2 Experiment B — End-to-end camera pipeline
 
@@ -307,24 +307,24 @@ Mean of R = 3 runs. Total board power via `tegrastats` `VDD_IN`; energy = mean P
 
 ## 7. Discussion
 
-*(Interpret. Reference specific table/figure numbers. Answer each RQ and rule each hypothesis.)*
+*(Interpretation of Experiment A. Each question is restated in italics, then answered from the data; accuracy items (Table 3) and RQ4/H4 (Experiment B) are marked pending.)*
 
-- **RQ1 / H3 (scaling):** How did latency and energy scale with size? Was energy super-linear once throttling hit? Point to Table 1/2 and Fig. 1–2. [____]
-- **RQ2 / H1–H2 (precision):** FP16 speedup = [____]%, accuracy Δ = [____]. INT8 further speedup = [____]%, accuracy Δ = [____]. **Was H2 (INT8 substantially faster on Ampere) supported?** Explain the Tensor-Core reason, and contrast with what the old Maxwell Nano would show. [____]
-- **RQ3 / H5 ("Super"):** Throughput uplift 15 W → Super = [____]×; extra power = [____] W; thermal cost = [____] °C. **Did you reach NVIDIA's ~1.7× claim?** Was energy-per-inference actually better at Super (faster finish) or worse? [____]
-- **RQ4 / H4 (deployment):** Gap between infer-only and end-to-end FPS = [____]. Bottleneck = [____ camera bandwidth / preprocessing / rendering]. Evidence: [____].
-- **Practical recommendation:** For a target of ≥[____] FPS, the best configuration was [____] because [____].
-- **Surprises / anomalies:** [____]
+- **RQ1 / H3 (scaling):** *How did latency and energy scale with model size, and was energy super-linear once throttling engaged?* — Latency and energy both scaled **monotonically** with model size at every precision (Fig. 1, Table 1). FP32 median latency rose 1.55 → 3.68 → 11.46 ms across ResNet-18 → ResNet-50 → VGG-16, and MAXN FP32 energy rose 15.6 → 36.6 → 143.9 mJ/inference. The scaling is not uniform, however: VGG-16 has ~5.3× the parameters of ResNet-50 but only ~3.9× the energy, indicating parameter count and compute cost are not proportional — VGG's cost is dominated by its large fully-connected/memory-bound layers rather than raw FLOPs. **H3's second clause (super-linear energy once throttling engages) could not be tested: nothing throttled.** Even VGG-16 FP32 at MAXN peaked at only 62 °C — well under the 80 °C flag and the 100 °C junction limit — at 21 °C ambient with the stock active cooler. H3 is therefore ruled *unsupported / untestable in this thermal regime*; the finding is that the Orin Nano's stock cooling has ample headroom for these workloads.
+- **RQ2 / H1–H2 (precision):** *What were the FP16 and INT8 speedups (and accuracy Δ)? Was H2 — INT8 substantially faster on Ampere — supported, and what is the Tensor-Core reason vs. the old Maxwell Nano?* — FP16 delivered **~2.0×** the throughput of FP32 (2.05× / 1.97× / 1.95× for ResNet-18/50/VGG-16; Fig. 3) — a ~49% latency reduction, well above H1's predicted ~30%. INT8 delivered a **further 1.6–2.1×** over FP16 (1.65× / 1.60× / 2.12×) and 3.1–4.1× over FP32 overall, again exceeding H2's predicted ~30%. **H2 (INT8 substantially faster on Ampere) is strongly supported on speed.** *Mechanism:* the Ampere 3rd-generation Tensor Cores run FP16 at ~2× the FP32 rate and INT8 at a further multiple (INT8 throughput is the basis of the board's 67-TOPS rating). This is hardware-specific — the original **Maxwell** Jetson Nano has no INT8 Tensor-Core datapath, so INT8 there would yield little-to-no speedup (or worse); the large INT8 gains here are an Ampere property. **Caveat: these verdicts are speed-only.** The accuracy cost of FP16/INT8 is measured in **Table 3 [pending]**; H1's "≈ equal accuracy" and the *net* value of the INT8 speedup cannot be confirmed until then.
+- **RQ3 / H5 ("Super"):** *What was the 15 W → MAXN uplift, the extra power and thermal cost; did it reach NVIDIA's ~1.7× claim; and was energy-per-inference better at Super or worse?* — The 15 W → MAXN uplift for ResNet-50 INT8 was **1.56×** (548.7 → 853.8 fps; Fig. 4, Table 2) — below NVIDIA's headline **~1.7×**, so **H5 is partially supported (~92% of the claim)**. The cost was small: **+1.67 W** mean power and **+2.4 °C**, far below the predicted +10 W / +10 °C. Both the shortfall and the low cost share one cause: ResNet-50 INT8 at batch 1 draws only ~8.8 W mean — nowhere near MAXN's ~25 W envelope — so the workload **does not saturate the GPU**, and the higher clocks translate into less than the full headline uplift (which is measured on GPU-saturating workloads). Energy-per-inference was **best at MAXN** (10.3 mJ) and worst at 7 W (17.6 mJ): the higher-power mode is *more* energy-efficient because each inference finishes faster (**"race-to-idle"** — the shorter runtime outweighs the higher instantaneous power).
+- **RQ4 / H4 (deployment):** *What is the gap between infer-only and end-to-end FPS, and where is the bottleneck (camera bandwidth / preprocessing / rendering)?* — **[pending Experiment B]** — the infer-only vs end-to-end FPS gap and the bottleneck (camera bandwidth / preprocessing / rendering) require the camera pipeline (Tables 4–5).
+- **Practical recommendation:** *For a given FPS target, what is the best configuration and why?* — INT8 at MAXN is the **throughput-per-watt optimum** for every model (ResNet-50: 96.6 inf/s/W at MAXN vs 76.5 at 15 W vs 56.6 at 7 W) — the lower-power modes cost *both* throughput and efficiency, so they are justified only under a hard power/thermal cap, not to save energy. For model choice, pick the **smallest architecture that meets the task's accuracy requirement and run it INT8 at MAXN**: ResNet-18 INT8 (2170 fps, 3.9 mJ) is the energy/throughput Pareto winner (Fig. 2), with ResNet-50 INT8 (854 fps, 10.3 mJ) the mid option when more capacity is needed. The accuracy floor that decides between them comes from **Table 3 [pending]**.
+- **Surprises / anomalies:** *What was unexpected?* — (1) **MAXN was the most energy-efficient mode despite the highest power** (race-to-idle) — counter to the intuition that low-power modes save energy. (2) **Nothing throttled**, even VGG-16 FP32 at MAXN (62 °C) — the stock cooler has large headroom at 21 °C ambient. (3) **VGG-16 INT8 build time was disproportionately large** (~217 s vs ~74 s for ResNet-50 INT8), reflecting the extra INT8 tactic search over VGG's large layers. (4) The 1.56× uplift undershot the 1.7× claim because this workload does not saturate the GPU's power envelope.
 
 **Hypothesis scorecard**
 
 | Hypothesis | Supported? | Evidence |
 |---|---|---|
-| H1 FP16 faster, ~equal accuracy | | |
-| H2 INT8 substantially faster on Ampere | | |
-| H3 super-linear energy w/ throttling | | |
-| H4 pipeline < compute FPS | | |
-| H5 Super ≈ 1.7× over 15 W | | |
+| H1 FP16 faster, ~equal accuracy | **Partial** — faster confirmed (~2.0×); accuracy pending | Fig. 3, Table 1; accuracy → Table 3 [pending] |
+| H2 INT8 substantially faster on Ampere | **Yes (speed)** — strongly (+1.6–2.1× over FP16) | Fig. 3, Table 1 |
+| H3 super-linear energy w/ throttling | **No / untestable** — nothing throttled (θ ≤ 62 °C) | Table 2 |
+| H4 pipeline < compute FPS | **Pending** | Experiment B (Tables 4–5) |
+| H5 Super ≈ 1.7× over 15 W | **Partial** — measured 1.56× (~92% of claim) | Fig. 4, Table 2 |
 
 ---
 
