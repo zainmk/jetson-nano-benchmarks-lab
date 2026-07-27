@@ -235,6 +235,8 @@ Randomize or counterbalance run order across configurations so thermal drift doe
 
 ### 6.1 Experiment A — Compute microbenchmark (trtexec)
 
+> **What ran:** the image-classification *forward pass* of each network, executed on the Orin's GPU by `trtexec`. The input was **synthetic (random) tensors**, not real images — the computation is identical to a real image, so this validly measures **speed/energy**, but it says nothing about **accuracy** (which needs labelled images; see Table 3). Latency/throughput here are therefore a pure hardware characterisation.
+
 **Table 1. Latency and throughput by architecture × precision at MAXN "Super".**
 
 Values are the mean of R = 3 runs; latency is `trtexec` GPU Compute Time. No configuration throttled (max θ ≤ 62 °C). *(Measured results in **bold**; template labels in plain text.)*
@@ -511,6 +513,30 @@ tmux attach -t bench     # re-enter the session later to check progress
 - **`tegrastats`** (ships with L4T/JetPack) — the **observer**. It runs no model; it passively samples the whole board every 100 ms and reports **system state**: total power (`VDD_IN`), RAM, GPU utilization (`GR3D_FREQ`), and temperature (`tj`). It knows nothing about the model.
 
 Neither replaces the other: `trtexec` says *how fast*, `tegrastats` says *at what cost*. Running them concurrently over one window lets you combine them — e.g. **energy per inference = mean power (tegrastats) × median latency (trtexec)** — which is why `run_config.sh` (B.1a) starts `tegrastats` logging in the background, then runs `trtexec` in the foreground, producing a paired `.trtexec.log` + `.tegrastats.log` per run. (`jtop`, from jetson-stats, is a live interactive view of the same `tegrastats` data — handy for watching a run, but the logged/parsed path is what feeds the tables.)
+
+**Pipeline — how the files produce one data point.** A trained network becomes a timed measurement in three stages, host → device:
+
+```
+HOST                                  JETSON
+models_download.py ──▶ resnet50.onnx (+ .onnx.data)      [blueprint: layer graph + weights]
+        │  scp                            │
+        └───────────────────────────────▶ ~/models/*.onnx
+                                           │
+run_config.sh drives one configuration:    ▼
+  set nvpmodel + jetson_clocks     ┌── trtexec ─────────────────────────┐
+  start tegrastats (background) ─▶ │ parse ONNX → BUILD TensorRT engine │
+  run trtexec (foreground)      ─▶ │  (optimise for Ampere @ precision) │
+  stop tegrastats                  │ → run N forward passes, time them  │
+  parse_tegrastats.py              └────────────────────────────────────┘
+        │                            │ *.trtexec.log      │ *.tegrastats.log
+        └────────────────────────▶ results_expA.csv   (speed + cost = one row)
+```
+
+- **`models_download.py` (host)** exports a trained model to **ONNX** — a *portable description* of the network (its layer graph + weights). It is not yet fast: it's a blueprint.
+- **`trtexec` (Jetson)** does the two jobs that make it run: it **builds a TensorRT engine** (compiles the ONNX into a hardware-specific, precision-specific executable optimised for the Ampere GPU / Tensor Cores — the "engine build time" metric), then **runs the forward pass** thousands of times and times it. A *forward pass* is the trained network computing its output for an input (all the convolutions + matrix-multiplies); no weights change and there is no backward pass — this is inference, not training.
+- **`run_config.sh` (Jetson)** locks the operating point, wraps `tegrastats` around the run, parses both logs, and appends one CSV row.
+
+Because the engine is compiled *for a chosen precision*, precision is a **build-time** decision (each of FP32/FP16/INT8 is a different engine); the timed *run* is where latency and throughput come from.
 
 **B.1 Compute microbenchmark with `trtexec` (Experiment A)**
 ```bash
