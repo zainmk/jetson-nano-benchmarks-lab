@@ -237,25 +237,29 @@ Randomize or counterbalance run order across configurations so thermal drift doe
 
 **Table 1. Latency and throughput by architecture × precision at MAXN "Super".**
 
+Values are the mean of R = 3 runs; latency is `trtexec` GPU Compute Time. No configuration throttled (max θ ≤ 62 °C). *(Measured results in **bold**; template labels in plain text.)*
+
 | Model | Precision | Median L (ms) | p95 L (ms) | p99 L (ms) | T (FPS) | Engine build (s) |
 |---|---|---|---|---|---|---|
-| A2 ResNet-18 | FP32 | | | | | |
-| A2 ResNet-18 | FP16 | | | | | |
-| A2 ResNet-18 | INT8 | | | | | |
-| A3 ResNet-50 | FP32 | | | | | |
-| A3 ResNet-50 | FP16 | | | | | |
-| A3 ResNet-50 | INT8 | | | | | |
-| A5 VGG-16 | FP16 | | | | | |
-| A5 VGG-16 | INT8 | | | | | |
-| … | | | | | | |
+| A2 ResNet-18 | FP32 | **1.55** | **1.56** | **1.56** | **643.9** | **16.3** |
+| A2 ResNet-18 | FP16 | **0.755** | **0.758** | **0.759** | **1318.4** | **26.2** |
+| A2 ResNet-18 | INT8 | **0.458** | **0.460** | **0.461** | **2170.3** | **32.0** |
+| A3 ResNet-50 | FP32 | **3.68** | **3.69** | **3.70** | **271.2** | **40.1** |
+| A3 ResNet-50 | FP16 | **1.87** | **1.88** | **1.88** | **533.4** | **69.3** |
+| A3 ResNet-50 | INT8 | **1.168** | **1.171** | **1.173** | **853.8** | **74.3** |
+| A5 VGG-16 | FP32 | **11.46** | **11.48** | **11.48** | **87.2** | **38.4** |
+| A5 VGG-16 | FP16 | **5.87** | **5.88** | **5.89** | **170.0** | **66.5** |
+| A5 VGG-16 | INT8 | **2.77** | **2.77** | **2.77** | **360.7** | **217.4** |
 
 **Table 2. Power, energy, memory, thermal by power mode (fixed model/precision, e.g. ResNet-50 INT8).**
 
+Mean of R = 3 runs. Total board power via `tegrastats` `VDD_IN`; energy = mean P × median L. *(Measured results in **bold**.)*
+
 | Power mode | Mean P (W) | Peak P (W) | T (FPS) | Energy E (mJ) | Peak RAM (MB) | Max θ (°C) | Throttle? |
 |---|---|---|---|---|---|---|---|
-| 7 W | | | | | | | |
-| 15 W | | | | | | | |
-| MAXN Super | | | | | | | |
+| 7 W | **4.73** | **5.94** | **267.8** | **17.6** | **3841** | **50.4** | **No** |
+| 15 W | **7.17** | **10.24** | **548.7** | **13.0** | **4332** | **54.7** | **No** |
+| MAXN Super | **8.84** | **14.22** | **853.8** | **10.3** | **4332** | **57.1** | **No** |
 
 **Table 3. Accuracy vs. precision (fixed image subset).**
 
@@ -265,10 +269,19 @@ Randomize or counterbalance run order across configurations so thermal drift doe
 | A3 | | | | | |
 | A5 | | | | | |
 
-**Figure 1.** Latency vs. model params (log-x), one line per precision. *(insert)*
-**Figure 2.** Energy-per-inference vs. throughput; Pareto frontier highlighted. *(insert)*
-**Figure 3.** FP32 → FP16 → INT8 speedup bar chart per model (the H1/H2 test). *(insert)*
-**Figure 4.** Throughput vs. power mode 7 W / 15 W / Super, with the 1.7× reference line (the H5 test). *(insert)*
+**Figure 1.** Latency vs. model params (log-log), one line per precision.
+![Figure 1 — latency scaling](images/fig1_latency_scaling.png)
+
+**Figure 2.** Energy-per-inference vs. throughput; INT8 holds the Pareto frontier (fast + efficient corner).
+![Figure 2 — energy vs throughput Pareto](images/fig2_energy_pareto.png)
+
+**Figure 3.** FP32 → FP16 → INT8 speedup per model (the H1/H2 test).
+![Figure 3 — precision speedup](images/fig3_precision_speedup.png)
+
+**Figure 4.** Throughput vs. power mode 7 W / 15 W / MAXN, with the 1.7× reference line (the H5 test).
+![Figure 4 — power-mode uplift](images/fig4_power_mode.png)
+
+> Figures generated from `data/results_expA.csv` by `scripts/make_figures.py` (reproducible).
 
 ### 6.2 Experiment B — End-to-end camera pipeline
 
