@@ -99,7 +99,7 @@ TensorRT compiles a network into an optimized "engine" for a target precision. O
 | Board | Jetson Orin Nano 8GB Super Dev Kit |
 | Power supply | [5V DC Barrel - 9V / 2.37A (45W) Power Adapter]  |
 | Storage | [microSD] |
-| USB camera | Make/model: [____]; native resolution: [____]; MJPG/YUYV: [____]; max FPS at test res: [____] |
+| USB camera | Model: **"GENERAL WEBCAM"** (generic unbranded USB webcam, on `/dev/video0`); formats: **MJPG** (≤1920×1080) + **YUYV** (≤1280×720); **max 30 fps at every resolution — hard capture ceiling**; test capture res: 1280×720 MJPG. Full format list: `data/env/v4l2_formats.txt`. |
 | Cooling | [built-in fan] |
 | Host PC (for ONNX export, optional) | [Surface Pro 11] |
 
