@@ -1,0 +1,4 @@
+run_id,datetime,model,precision,power_mode,render,capture_fps,infer_fps,e2e_fps,gpu_util_pct,cpu_util_pct,peak_ram_mb,mean_power_W,correct,missed,false_pos,mean_conf,clip_name,notes
+ssd-mobilenet-v2_fp16_maxn_run1,2026-07-30T21:58:22,ssd-mobilenet-v2,fp16,maxn,no,28.92,239.88,28.96,23,,3097,6.09,,,,,,codec=mjpeg
+ssd-mobilenet-v2_fp16_maxn_run2,2026-07-30T22:10:48,ssd-mobilenet-v2,fp16,maxn,no,28.95,239.98,28.96,22,,3113,6.12,,,,,,codec=mjpeg
+ssd-mobilenet-v2_fp16_maxn_run3,2026-07-30T22:12:50,ssd-mobilenet-v2,fp16,maxn,no,28.95,240.79,28.96,28,,3125,6.19,,,,,,codec=mjpeg

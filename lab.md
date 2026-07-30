@@ -287,13 +287,16 @@ Mean of R = 3 runs. Total board power via `tegrastats` `VDD_IN`; energy = mean P
 
 ### 6.2 Experiment B — End-to-end camera pipeline
 
-**Table 4. Pipeline throughput and utilization (INT8, MAXN Super).**
+**Table 4. Pipeline throughput and utilization (MAXN Super).** SSD-Mobilenet runs **FP16** (jetson-inference default; INT8 for the .uff would need calibration). Values are R=3 means; FPS from `bench_e2e.py` (wall-clock), power/util from `tegrastats`. *(Measured results in **bold**.)*
 
 | Model | Capture FPS | Infer-only FPS | End-to-end FPS | GPU util (%) | CPU util (%) | Peak RAM (MB) |
 |---|---|---|---|---|---|---|
-| B1 SSD-MobileNet-v2 | | | | | | |
-| B3 YOLOv8n | | | | | | |
-| B4 YOLOv8s | | | | | | |
+| B1 SSD-MobileNet-v2 (MJPG) | **28.9** | **240.2** | **29.0** | **~24** | — | **3125** |
+| B1 SSD-MobileNet-v2 (YUYV raw) | **9.6** | **239.5** | **9.7** | — | — | — |
+| B3 YOLOv8n | *(pending export)* | | | | | |
+| B4 YOLOv8s | *(pending export)* | | | | | |
+
+> **Key result (H4):** SSD-Mobilenet's GPU can do **~240 fps**, but the pipeline delivers only **~29 fps** — the **camera is the bottleneck, not compute**. The GPU is only **~24% utilized** (vs 98–99% in Experiment A) — it sits idle ~¾ of the time waiting for frames, and mean power drops to **6.1 W** (vs ~9 W compute-bound). The camera *pixel format* matters: raw **YUYV** at 720p exceeds USB 2.0 bandwidth and collapses capture to **9.6 fps**, while **MJPG** (compressed) restores **~29 fps** — a ~3× swing from the codec alone (see §8, Appendix B.3). CPU-util was not captured by the tegrastats parser.
 
 **Table 5. Detection accuracy proxy on fixed clip.**
 
@@ -314,7 +317,7 @@ Mean of R = 3 runs. Total board power via `tegrastats` `VDD_IN`; energy = mean P
 - **RQ1 / H3 (scaling):** *How did latency and energy scale with model size, and was energy super-linear once throttling engaged?* — Latency and energy both scaled **monotonically** with model size at every precision (Fig. 1, Table 1). FP32 median latency rose 1.55 → 3.68 → 11.46 ms across ResNet-18 → ResNet-50 → VGG-16, and MAXN FP32 energy rose 15.6 → 36.6 → 143.9 mJ/inference. The scaling is not uniform, however: VGG-16 has ~5.3× the parameters of ResNet-50 but only ~3.9× the energy, indicating parameter count and compute cost are not proportional — VGG's cost is dominated by its large fully-connected/memory-bound layers rather than raw FLOPs. **H3's second clause (super-linear energy once throttling engages) could not be tested: nothing throttled.** Even VGG-16 FP32 at MAXN peaked at only 62 °C — well under the 80 °C flag and the 100 °C junction limit — at 21 °C ambient with the stock active cooler. H3 is therefore ruled *unsupported / untestable in this thermal regime*; the finding is that the Orin Nano's stock cooling has ample headroom for these workloads.
 - **RQ2 / H1–H2 (precision):** *What were the FP16 and INT8 speedups (and accuracy Δ)? Was H2 — INT8 substantially faster on Ampere — supported, and what is the Tensor-Core reason vs. the old Maxwell Nano?* — FP16 delivered **~2.0×** the throughput of FP32 (2.05× / 1.97× / 1.95× for ResNet-18/50/VGG-16; Fig. 3) — a ~49% latency reduction, well above H1's predicted ~30%. INT8 delivered a **further 1.6–2.1×** over FP16 (1.65× / 1.60× / 2.12×) and 3.1–4.1× over FP32 overall, again exceeding H2's predicted ~30%. **H2 (INT8 substantially faster on Ampere) is strongly supported on speed.** *Mechanism:* the Ampere 3rd-generation Tensor Cores run FP16 at ~2× the FP32 rate and INT8 at a further multiple (INT8 throughput is the basis of the board's 67-TOPS rating). This is hardware-specific — the original **Maxwell** Jetson Nano has no INT8 Tensor-Core datapath, so INT8 there would yield little-to-no speedup (or worse); the large INT8 gains here are an Ampere property. **Caveat: these verdicts are speed-only.** The accuracy cost of FP16/INT8 is measured in **Table 3 [pending]**; H1's "≈ equal accuracy" and the *net* value of the INT8 speedup cannot be confirmed until then.
 - **RQ3 / H5 ("Super"):** *What was the 15 W → MAXN uplift, the extra power and thermal cost; did it reach NVIDIA's ~1.7× claim; and was energy-per-inference better at Super or worse?* — The 15 W → MAXN uplift for ResNet-50 INT8 was **1.56×** (548.7 → 853.8 fps; Fig. 4, Table 2) — below NVIDIA's headline **~1.7×**, so **H5 is partially supported (~92% of the claim)**. The cost was small: **+1.67 W** mean power and **+2.4 °C**, far below the predicted +10 W / +10 °C. Both the shortfall and the low cost share one cause: ResNet-50 INT8 at batch 1 draws only ~8.8 W mean — nowhere near MAXN's ~25 W envelope — so the workload **does not saturate the GPU**, and the higher clocks translate into less than the full headline uplift (which is measured on GPU-saturating workloads). Energy-per-inference was **best at MAXN** (10.3 mJ) and worst at 7 W (17.6 mJ): the higher-power mode is *more* energy-efficient because each inference finishes faster (**"race-to-idle"** — the shorter runtime outweighs the higher instantaneous power).
-- **RQ4 / H4 (deployment):** *What is the gap between infer-only and end-to-end FPS, and where is the bottleneck (camera bandwidth / preprocessing / rendering)?* — **[pending Experiment B]** — the infer-only vs end-to-end FPS gap and the bottleneck (camera bandwidth / preprocessing / rendering) require the camera pipeline (Tables 4–5).
+- **RQ4 / H4 (deployment):** *What is the gap between infer-only and end-to-end FPS, and where is the bottleneck (camera bandwidth / preprocessing / rendering)?* — **Confirmed for the lightweight model (Table 4).** SSD-Mobilenet-v2 infers at **~240 fps** but the pipeline delivers only **~29 fps** — an ~8× gap — with the **GPU only ~24% utilized** (vs 98–99% in Exp. A). The bottleneck is **camera capture**, not compute: the USB webcam caps at 30 fps, and the *pixel format* is decisive — raw YUYV at 720p exceeds USB 2.0 bandwidth (~9.6 fps) while MJPG restores ~29 fps. So for a lightweight detector, deployment throughput is set by the sensor/interface, and the expensive GPU sits idle ¾ of the time (mean power falls to 6.1 W). **H4 supported.** *Pending:* YOLOv8n/s (B3/B4) — heavier models whose infer-only rate may drop below 30 fps, flipping the bottleneck back to the GPU (the informative contrast).
 - **Practical recommendation:** *For a given FPS target, what is the best configuration and why?* — INT8 at MAXN is the **throughput-per-watt optimum** for every model (ResNet-50: 96.6 inf/s/W at MAXN vs 76.5 at 15 W vs 56.6 at 7 W) — the lower-power modes cost *both* throughput and efficiency, so they are justified only under a hard power/thermal cap, not to save energy. For model choice, pick the **smallest architecture that meets the task's accuracy requirement and run it INT8 at MAXN**: ResNet-18 INT8 (2170 fps, 3.9 mJ) is the energy/throughput Pareto winner (Fig. 2), with ResNet-50 INT8 (854 fps, 10.3 mJ) the mid option when more capacity is needed. The accuracy floor that decides between them comes from **Table 3 [pending]**.
 - **Surprises / anomalies:** *What was unexpected?* — (1) **MAXN was the most energy-efficient mode despite the highest power** (race-to-idle) — counter to the intuition that low-power modes save energy. (2) **Nothing throttled**, even VGG-16 FP32 at MAXN (62 °C) — the stock cooler has large headroom at 21 °C ambient. (3) **VGG-16 INT8 build time was disproportionately large** (~217 s vs ~74 s for ResNet-50 INT8), reflecting the extra INT8 tactic search over VGG's large layers. (4) The 1.56× uplift undershot the 1.7× claim because this workload does not saturate the GPU's power envelope.
 
@@ -325,7 +328,7 @@ Mean of R = 3 runs. Total board power via `tegrastats` `VDD_IN`; energy = mean P
 | H1 FP16 faster, ~equal accuracy | **Partial** — faster confirmed (~2.0×); accuracy pending | Fig. 3, Table 1; accuracy → Table 3 [pending] |
 | H2 INT8 substantially faster on Ampere | **Yes (speed)** — strongly (+1.6–2.1× over FP16) | Fig. 3, Table 1 |
 | H3 super-linear energy w/ throttling | **No / untestable** — nothing throttled (θ ≤ 62 °C) | Table 2 |
-| H4 pipeline < compute FPS | **Pending** | Experiment B (Tables 4–5) |
+| H4 pipeline < compute FPS | **Yes** (lightweight model) — ~29 vs ~240 fps, GPU ~24% | Table 4; YOLO B3/B4 pending for the GPU-bound contrast |
 | H5 Super ≈ 1.7× over 15 W | **Partial** — measured 1.56× (~92% of claim) | Fig. 4, Table 2 |
 
 ---
@@ -337,7 +340,7 @@ Mean of R = 3 runs. Total board power via `tegrastats` `VDD_IN`; energy = mean P
 - **Single device** — no unit-to-unit variance; results may not generalize to other Orin Nanos or to Orin NX/AGX (which additionally have DLA).
 - **Power measurement** via on-board INA sensors (`VDD_IN`) is coarse and board/JetPack-dependent; field names differ across revisions — verify against your `tegrastats` output.
 - **Thermal-zone reads are unreliable** — several Orin `thermal_zone*/temp` sysfs nodes intermittently return `EAGAIN` ("Resource temporarily unavailable"). Start-temperature reads therefore tolerate failures and take the hottest *readable* zone; per-run peak θ is taken from `tegrastats`' `tj@` field instead, which is stable.
-- **Camera as confound** — USB bandwidth / MJPG decode can cap FPS independent of the model.
+- **Camera as confound** — USB bandwidth caps FPS independent of the model, and the *pixel format* matters: measured capture was **~9.6 fps with raw YUYV** (720p exceeds USB 2.0 bandwidth) vs **~30 fps with MJPG** (compressed). End-to-end FPS is therefore dominated by the camera/codec, not the model, for lightweight detectors (H4). Record the codec used.
 - Other: [____]
 
 ---
@@ -696,6 +699,14 @@ python3 bench_e2e.py --model ssd-mobilenet-v2 --frames 1000 --tag B1_INT8_SUPER_
 # compare with --render to measure rendering overhead (H4)
 ```
 > For YOLOv8 (B3–B5), either run the Ultralytics TensorRT export directly, or wrap your own TensorRT engine with the same timing skeleton (capture → sync → t0 → infer → sync → t1). Keep the warm-up/N/percentile logic identical so the two tracks are comparable.
+
+**The finalized harness is `scripts/bench_e2e.py`** (a capture-only calibration phase for the true camera rate, then a warm-up + N-frame pipeline phase). Three findings/gotchas from the actual runs — all logged here for reproducibility:
+
+1. **`detectnet`'s built-in timer is unreliable on this container** — it emits `cudaEventElapsedTime … device not ready (error 600)` on many frames (a CUDA-event bug, likely from the r36.3-container / r36.4.7-host gap) and **over-reports inference time ~5×** (~21 ms reported vs **~4 ms measured** for SSD-Mobilenet-v2 with clean `perf_counter` + `cudaDeviceSynchronize`). *Do not trust `net.GetNetworkFPS()` / the printed `Network` timing here* — measure independently. This is the reason the custom harness exists.
+2. **Camera codec dominates capture rate over USB.** jetson-inference defaults the webcam to **raw YUYV**, which at 1280×720 is ~1.84 MB/frame × 30 = ~55 MB/s — **above USB 2.0's practical ~35 MB/s**, so capture collapses to **~9.6 fps**. Selecting **MJPG** (compressed, `--input-codec=mjpeg`) fits the bandwidth and restores **~30 fps**. Record which codec was used — it changes end-to-end FPS ~3× and is itself an H4 result (the bottleneck for a light model is *camera bandwidth*, not compute: ~10–30 fps capture vs ~239 fps inference).
+3. **The `jetson_inference` Python bindings segfault during interpreter GC on exit** (harmless — the CSV row is written first). The harness calls `os._exit(0)` after recording to skip the faulty cleanup, so runs end cleanly instead of hanging.
+
+> Power/RAM/GPU-util (remaining Table 4 columns) come from `tegrastats` run **on the host** in a parallel session during the run (the inference container does not include `tegrastats`).
 
 ---
 
