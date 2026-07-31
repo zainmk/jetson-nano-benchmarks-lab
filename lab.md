@@ -9,7 +9,7 @@
 
 ## Abstract
 
-TBD.
+This study benchmarks real-time object recognition on the NVIDIA Jetson Orin Nano 8GB "Super" developer kit and asks a deployment-focused question: **given a fixed, constrained input sensor, what is the minimum-cost configuration (model × precision × power mode) that still meets the real-time target?** A compute microbenchmark (Experiment A) first maps the trade-off surface — on the Ampere Tensor Cores, FP16 roughly doubles throughput over FP32 and INT8 adds a further 1.6–2.1× (3–4× over FP32), and *when the GPU is compute-bound*, MAXN "Super" is the **most** energy-efficient mode because it finishes each inference fastest ("race-to-idle"). A deployment experiment (Experiment B) then runs the detection pipeline on a fixed 30 fps USB camera and finds that **every detector tested (SSD-Mobilenet-v2, YOLOv8n/s) infers 5–8× faster than the camera can deliver frames** — the sensor, not the GPU, bounds real-time throughput, leaving the accelerator idle ~¾ of the time. This reframes the design goal from *"how fast can it go?"* to *"what is the least power and cost needed to meet a fixed requirement?"* and motivates the central synthesis: identifying the energy-optimal configuration under the sensor constraint, and testing whether the optimal power mode **inverts** relative to the compute-bound case. *(The optimal-configuration synthesis — the detection power-mode sweep and the accuracy comparison — is developed in §6.2 and §7.)*
 
 **Keywords:** edge AI, embedded inference, Jetson Orin Nano, Ampere, Tensor Cores, TensorRT, INT8 quantization, object detection, benchmarking, energy efficiency
 
@@ -19,6 +19,8 @@ TBD.
 
 ### 1.1 Motivation
 Object recognition on embedded devices underpins applications such as [e.g., robotics, wildlife camera traps, smart cameras, assistive tech]. Unlike a datacenter GPU, an edge device must satisfy hard constraints on power, thermals, and memory. Choosing a model is therefore not just an accuracy decision — it is a joint optimization over accuracy, latency, energy, and memory. The Orin Nano is notable for being powerful enough to run "all modern AI models" (including transformer-based detectors) while still living in a single-digit-to-~25 W envelope, which makes the precision and power-mode knobs studied here consequential rather than academic.
+
+Crucially, a real edge system is often bounded not by its accelerator but by a cheaper, slower component — here, the USB camera. When that happens, the design goal shifts from *maximizing* compute to spending the **minimum** power and cost needed to meet a fixed requirement. **Over-provisioning a capable accelerator that the rest of the system cannot keep fed is an efficiency failure, not a feature** — burning watts (and heat, and battery, and hardware cost) to exceed a ceiling the sensor makes unusable. This study therefore treats the constrained sensor not as a nuisance but as the *premise*: it fixes the requirement, and the engineering question becomes finding the leanest configuration that satisfies it.
 
 
 
@@ -30,6 +32,7 @@ Given a fixed edge platform (Jetson Orin Nano 8GB Super) and a fixed sensor (USB
 - **RQ2 (Precision):** What is the latency/throughput/accuracy trade-off of FP16 and INT8 versus FP32 *on Ampere Tensor-Core hardware*?
 - **RQ3 (Power mode / "Super"):** How much throughput is gained moving 7 W → 15 W → MAXN "Super," and at what power/thermal cost? Does the measured uplift match NVIDIA's ~1.7× claim?
 - **RQ4 (Deployment):** In the full camera→infer→render pipeline, how much of the achievable compute throughput is actually realized, and where is the bottleneck?
+- **RQ5 (Optimal config under a fixed constraint — the synthesis):** Given that real-time throughput is capped by the sensor (a 30 fps USB camera), what is the **minimum-cost configuration** (model × precision × power mode) that still meets the 30 fps and accuracy targets — and does the **energy-optimal power mode invert** relative to the compute-bound case (RQ3)?
 
 ### 1.4 Hypotheses
 
@@ -38,12 +41,14 @@ Given a fixed edge platform (Jetson Orin Nano 8GB Super) and a fixed sensor (USB
 - **H3:** Latency will grow monotonically with model FLOPs, but energy-per-inference will grow *super-linearly* once thermal throttling engages.
 - **H4:** End-to-end camera FPS will be lower than compute-only FPS, and for lightweight models the bottleneck will be [capture] rather than inference [due to using a limited USB camera].
 - **H5 (the "Super" test):** The MAXN "Super" power mode will deliver close to NVIDIA's claimed ~1.7× throughput uplift versus the 15 W mode, at a cost of ~[10] W extra draw and [10] °C higher temperature.
+- **H6 (the constraint inversion — the synthesis):** Because every detector has large compute headroom over the 30 fps camera ceiling, the **lowest** power mode will still meet the target, making it the **energy-optimal** choice — *inverting* H3/H5, where MAXN was most efficient (race-to-idle) because the GPU was compute-bound. Under the sensor constraint, running MAXN will spend extra power for **no** throughput gain, so the optimal config will favor the leanest viable mode.
 
 ### 1.5 Contributions
 1. A reproducible dual benchmark (compute microbenchmark + end-to-end pipeline) for the Jetson Orin Nano 8GB Super.
 2. A quantified architecture × precision × power-mode trade-off surface for Ampere edge hardware.
 3. An empirical measurement of the INT8 Tensor-Core speedup and of the "Super" MAXN uplift versus NVIDIA's headline claim.
-4. An open harness and raw dataset (Appendices B–C).
+4. **A deployment synthesis under a real constraint:** identifying the energy-optimal configuration when a fixed 30 fps sensor — not the GPU — bounds throughput, and testing whether the optimal power mode *inverts* relative to the compute-bound regime (the "don't over-provision" result).
+5. An open harness and raw dataset (Appendices B–C).
 
 ---
 
@@ -293,10 +298,30 @@ Mean of R = 3 runs. Total board power via `tegrastats` `VDD_IN`; energy = mean P
 |---|---|---|---|---|---|---|
 | B1 SSD-MobileNet-v2 (MJPG) | **28.9** | **240.2** | **29.0** | **~24** | — | **3125** |
 | B1 SSD-MobileNet-v2 (YUYV raw) | **9.6** | **239.5** | **9.7** | — | — | — |
-| B3 YOLOv8n | *(pending export)* | | | | | |
-| B4 YOLOv8s | *(pending export)* | | | | | |
+| B3 YOLOv8n | *(Phase 2)* | **252.8**¹ | *(Phase 2)* | *(Phase 2)* | — | — |
+| B4 YOLOv8s | *(Phase 2)* | **159.3**¹ | *(Phase 2)* | *(Phase 2)* | — | — |
+
+¹ YOLO infer-only via `trtexec` (network only, no NMS; see Table 6), MAXN — **not** the camera pipeline. Both are ≫ 30 fps, so their capture/end-to-end rows would also be camera-bound (~29 fps); the full-pipeline measurement is Phase 2 (Ultralytics-on-camera).
 
 > **Key result (H4):** SSD-Mobilenet's GPU can do **~240 fps**, but the pipeline delivers only **~29 fps** — the **camera is the bottleneck, not compute**. The GPU is only **~24% utilized** (vs 98–99% in Experiment A) — it sits idle ~¾ of the time waiting for frames, and mean power drops to **6.1 W** (vs ~9 W compute-bound). The camera *pixel format* matters: raw **YUYV** at 720p exceeds USB 2.0 bandwidth and collapses capture to **9.6 fps**, while **MJPG** (compressed) restores **~29 fps** — a ~3× swing from the codec alone (see §8, Appendix B.3). CPU-util was not captured by the tegrastats parser.
+
+**Table 6. Optimal-config synthesis — detection infer-only throughput vs. the 30 fps ceiling, across power modes (RQ5 / H6).**
+
+The question: does each detector still clear the **30 fps** requirement at *reduced* power? If even the lowest mode does, MAXN provides no usable throughput and is pure waste under the sensor constraint. Infer-only FPS via `trtexec` (network only, FP16), mean of R = 3; mean board power in parentheses. *(Measured in **bold**; ✅ = meets the 30 fps real-time target.)*
+
+| Model | 7 W | 15 W | 25 W | MAXN | Min. viable mode |
+|---|---|---|---|---|---|
+| SSD-Mobilenet-v2 | — | — | — | ~240² | *(not swept)* |
+| YOLOv8n | **77.9** ✅ (4.54 W) | — | — | **252.8** ✅ (8.08 W) | **7 W** |
+| YOLOv8s | **45.7** ✅ (4.72 W) | **104.1** ✅ (7.26 W) | — | **159.3** ✅ (8.67 W) | **7 W** |
+
+² SSD's ~240 fps was measured in the camera pipeline (`detectNet`, incl. NMS), not `trtexec` — method differs from the YOLO rows, so it is not directly comparable and SSD was not swept across modes.
+
+> **Tier-1 result:** **every configuration tested clears 30 fps, including the heaviest model in the lowest power mode.** YOLOv8s — the most demanding detector here — sustains **45.7 fps at 7 W**, still 1.5× the requirement, while YOLOv8n reaches 77.9 fps (2.6×). Moving 7 W → MAXN costs **~1.9× the board power** (4.7 → 8.7 W) to buy throughput the 30 fps camera can never deliver frames for. Under this sensor constraint the extra capability is unusable, so **7 W is the minimum viable mode for both models**.
+>
+> **Headroom caveat:** 1.5× margin at 7 W (YOLOv8s) is sufficient but not generous — a heavier model, higher input resolution, or burst load would erode it. The recommendation is "7 W suffices *for this workload*," not "7 W is always safe."
+>
+> *Still pending (H6):* whether 7 W is also the **energy-optimal** mode requires camera-pipeline board power at each mode — at a capped 30 fps the GPU idles between frames (66% duty at 7 W vs 19% at MAXN), so `trtexec`'s flat-out power does not answer it. See §7 RQ5/H6.
 
 **Table 5. Detection accuracy proxy on fixed clip.**
 
@@ -320,6 +345,10 @@ Mean of R = 3 runs. Total board power via `tegrastats` `VDD_IN`; energy = mean P
 - **RQ4 / H4 (deployment):** *What is the gap between infer-only and end-to-end FPS, and where is the bottleneck (camera bandwidth / preprocessing / rendering)?* — **Confirmed for the lightweight model (Table 4).** SSD-Mobilenet-v2 infers at **~240 fps** but the pipeline delivers only **~29 fps** — an ~8× gap — with the **GPU only ~24% utilized** (vs 98–99% in Exp. A). The bottleneck is **camera capture**, not compute: the USB webcam caps at 30 fps, and the *pixel format* is decisive — raw YUYV at 720p exceeds USB 2.0 bandwidth (~9.6 fps) while MJPG restores ~29 fps. So for a lightweight detector, deployment throughput is set by the sensor/interface, and the expensive GPU sits idle ¾ of the time (mean power falls to 6.1 W). **H4 supported.** *Pending:* YOLOv8n/s (B3/B4) — heavier models whose infer-only rate may drop below 30 fps, flipping the bottleneck back to the GPU (the informative contrast).
 - **Practical recommendation:** *For a given FPS target, what is the best configuration and why?* — INT8 at MAXN is the **throughput-per-watt optimum** for every model (ResNet-50: 96.6 inf/s/W at MAXN vs 76.5 at 15 W vs 56.6 at 7 W) — the lower-power modes cost *both* throughput and efficiency, so they are justified only under a hard power/thermal cap, not to save energy. For model choice, pick the **smallest architecture that meets the task's accuracy requirement and run it INT8 at MAXN**: ResNet-18 INT8 (2170 fps, 3.9 mJ) is the energy/throughput Pareto winner (Fig. 2), with ResNet-50 INT8 (854 fps, 10.3 mJ) the mid option when more capacity is needed. The accuracy floor that decides between them comes from **Table 3 [pending]**.
 - **Surprises / anomalies:** *What was unexpected?* — (1) **MAXN was the most energy-efficient mode despite the highest power** (race-to-idle) — counter to the intuition that low-power modes save energy. (2) **Nothing throttled**, even VGG-16 FP32 at MAXN (62 °C) — the stock cooler has large headroom at 21 °C ambient. (3) **VGG-16 INT8 build time was disproportionately large** (~217 s vs ~74 s for ResNet-50 INT8), reflecting the extra INT8 tactic search over VGG's large layers. (4) The 1.56× uplift undershot the 1.7× claim because this workload does not saturate the GPU's power envelope.
+- **RQ5 / H6 (optimal config under the sensor constraint — the synthesis):** *Given the 30 fps camera cap, what is the minimum-cost config, and does the energy-optimal power mode invert relative to the compute-bound case?* — **Sufficiency answered; energy-optimality still pending.**
+  **(a) Minimum viable mode — resolved (Table 6).** The power-mode sweep shows **every configuration clears 30 fps, including the heaviest model at the lowest power setting**: YOLOv8s sustains **45.7 fps at 7 W** (1.5× the requirement) and YOLOv8n **77.9 fps** (2.6×). Since the camera cannot deliver more than 30 fps, the additional 3.5× throughput available at MAXN is **unusable**, yet costs ~1.9× the board power (4.7 → 8.7 W). **The minimum viable configuration is therefore 7 W for both detectors** — the leanest mode still satisfies the real-time requirement, so provisioning beyond it buys nothing under this sensor. This is the practical "don't over-provision" result: capability that the rest of the system cannot feed is spent power, heat, and hardware cost with no return.
+  **(b) Energy-optimality — pending, and the outcome is genuinely uncertain.** Whether 7 W is also the *energy*-optimal mode does **not** follow from (a), because at a capped 30 fps the GPU idles between frames rather than racing to more work: duty cycle is ~66% at 7 W but only ~19% at MAXN. Energy per frame is then `busy·P_busy + idle·P_idle`, and MAXN's cheaper compute (~55 mJ vs ~103 mJ of busy energy per frame) is offset by ~27 ms of idle draw. A first-order estimate using the measured ~3.3 W idle floor puts the two within a few percent (~141 vs ~144 mJ/frame) — i.e. **H6's inversion may be weak or absent, with the honest finding being that power mode matters little once idle dominates.** The deciding unknown is whether idle power itself falls in lower modes (lower clocks, fewer online cores), which the single-mode idle figure cannot tell us. Resolving this requires **camera-pipeline board power measured at 7 W / 15 W / MAXN** — `trtexec`'s flat-out power cannot answer it.
+  **(c) Which model — pending Table 5.** The accuracy comparison on the fixed clip fixes the remaining constraint: given that all candidates meet 30 fps at 7 W, model choice reduces to detection quality per unit energy.
 
 **Hypothesis scorecard**
 
@@ -330,6 +359,7 @@ Mean of R = 3 runs. Total board power via `tegrastats` `VDD_IN`; energy = mean P
 | H3 super-linear energy w/ throttling | **No / untestable** — nothing throttled (θ ≤ 62 °C) | Table 2 |
 | H4 pipeline < compute FPS | **Yes** (lightweight model) — ~29 vs ~240 fps, GPU ~24% | Table 4; YOLO B3/B4 pending for the GPU-bound contrast |
 | H5 Super ≈ 1.7× over 15 W | **Partial** — measured 1.56× (~92% of claim) | Fig. 4, Table 2 |
+| H6 optimal power mode inverts under sensor constraint | **Partial** — *sufficiency* confirmed (7 W meets 30 fps for both YOLO models, at ~½ the power of MAXN); *energy-optimality* pending pipeline power, and may prove weak (idle dominates) | Table 6; §7 RQ5/H6 |
 
 ---
 
