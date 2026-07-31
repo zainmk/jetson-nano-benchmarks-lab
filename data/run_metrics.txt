@@ -1,4 +1,4 @@
 RECORDING THE TEGRASTATS MEASUREMENTS FOR EXPB RUN 1/2/3
 RUN 1; mean_power_W=6.09 peak_power_W=7.06 peak_ram_MB=3097 peak_gpu_pct=23
 RUN 2: mean_power_W=6.12 peak_power_W=7.02 peak_ram_MB=3113 peak_gpu_pct=22
-RUN 3; mean_power_W=6.19 peak_power_W=7.06 peak_ram_MB=3125 peak_gpu_pct=28
+RUN 3; mean_power_W=6.19 peak_power_W=7.06 peak_ram_MB=3125 peak_gpu_pct=28 
