@@ -2,3 +2,13 @@ run_id,datetime,model,precision,power_mode,render,capture_fps,infer_fps,e2e_fps,
 ssd-mobilenet-v2_fp16_maxn_run1,2026-07-30T21:58:22,ssd-mobilenet-v2,fp16,maxn,no,28.92,239.88,28.96,23,,3097,6.09,,,,,,codec=mjpeg
 ssd-mobilenet-v2_fp16_maxn_run2,2026-07-30T22:10:48,ssd-mobilenet-v2,fp16,maxn,no,28.95,239.98,28.96,22,,3113,6.12,,,,,,codec=mjpeg
 ssd-mobilenet-v2_fp16_maxn_run3,2026-07-30T22:12:50,ssd-mobilenet-v2,fp16,maxn,no,28.95,240.79,28.96,28,,3125,6.19,,,,,,codec=mjpeg
+ssd-mobilenet-v2_fp16_15w_run1,2026-07-31T22:24:20,ssd-mobilenet-v2,fp16,15w,no,28.98,151.93,28.96,49,,4225,5.33,,,,,,codec=mjpeg; R=1; loose tegrastats window (lab.md S8)
+ssd-mobilenet-v2_fp16_7w_run1,2026-07-31T22:41:14,ssd-mobilenet-v2,fp16,7w,no,29.00,75.36,28.99,77,,2997,3.97,,,,,,codec=mjpeg; R=1; loose tegrastats window (lab.md S8)
+ssd-mobilenet-v2_fp16_maxn_yuyv,2026-07-30T21:30:56,ssd-mobilenet-v2,fp16,maxn,no,9.64,239.48,9.66,,,,,,,,,,codec=raw/YUYV -- USB-bandwidth-limited comparison point (Table 4); not part of the R=3 set
+#
+# gpu_util_pct is PEAK (max GR3D_FREQ), not mean -- the parser reports max(). Mean GPU
+# utilisation across these logs is ~3%; do not read this column as a duty cycle.
+# Power/RAM/GPU columns for the MAXN runs come from run_metrics.txt (raw tegrastats logs
+# for those three runs were lost); 15W and 7W trace to data/raw/expB_pipeline/.
+# Table 5 accuracy columns (correct/missed/false_pos/mean_conf) are scored separately by
+# scripts/score_accuracy.py against data/clip_ground_truth.csv and are not duplicated here.

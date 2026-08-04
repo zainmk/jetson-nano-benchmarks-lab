@@ -1,4 +1,6 @@
-# Benchmarking Real-Time Object Recognition on the NVIDIA Jetson Orin Nano (Super) Developer Kit: The Effect of Model Architecture, Numerical Precision, and Power Mode — Including the "Super" Uplift — on Latency, Throughput, and Energy Efficiency
+# When the Camera Is the Bottleneck: Characterizing Energy-Efficient Object Recognition on the NVIDIA Jetson Orin Nano (Super)
+
+*A measurement study of model architecture, numerical precision, and power mode — and where the remaining energy actually lives once compute stops being the constraint.*
 
 **Author(s):** Zain Khan  
 **Affiliation / Course:** Self-Directed Learning  
@@ -9,7 +11,13 @@
 
 ## Abstract
 
-This study benchmarks real-time object recognition on the NVIDIA Jetson Orin Nano 8GB "Super" developer kit and asks a deployment-focused question: **given a fixed, constrained input sensor, what is the minimum-cost configuration (model × precision × power mode) that still meets the real-time target?** A compute microbenchmark (Experiment A) first maps the trade-off surface — on the Ampere Tensor Cores, FP16 roughly doubles throughput over FP32 and INT8 adds a further 1.6–2.1× (3–4× over FP32), and *when the GPU is compute-bound*, MAXN "Super" is the **most** energy-efficient mode because it finishes each inference fastest ("race-to-idle"). A deployment experiment (Experiment B) then runs the detection pipeline on a fixed 30 fps USB camera and finds that **every detector tested (SSD-Mobilenet-v2, YOLOv8n/s) infers 5–8× faster than the camera can deliver frames** — the sensor, not the GPU, bounds real-time throughput, leaving the accelerator idle ~¾ of the time. This reframes the design goal from *"how fast can it go?"* to *"what is the least power and cost needed to meet a fixed requirement?"* and motivates the central synthesis: identifying the energy-optimal configuration under the sensor constraint, and testing whether the optimal power mode **inverts** relative to the compute-bound case. *(The optimal-configuration synthesis — the detection power-mode sweep and the accuracy comparison — is developed in §6.2 and §7.)*
+This is a measurement study of real-time object recognition on the NVIDIA Jetson Orin Nano 8GB "Super" developer kit, built around an instrumented benchmark harness and a deployment-focused question: **once a constrained input sensor — not the accelerator — bounds throughput, where does the remaining energy actually live?**
+
+A compute microbenchmark (Experiment A, 33 runs) characterizes the trade-off surface. On the Ampere Tensor Cores, FP16 roughly doubles throughput over FP32 and INT8 adds a further 1.6–2.1× (3–4× over FP32); the MAXN "Super" mode delivers a measured **1.56×** uplift over 15 W against NVIDIA's claimed ~1.7×, the shortfall explained by a batch-1 workload that never saturates the power envelope. When the GPU *is* compute-bound, MAXN is the **most** energy-efficient mode — finishing each inference fastest ("race-to-idle").
+
+A deployment experiment (Experiment B) then runs the detection pipeline on a 30 fps USB webcam. Every detector tested — SSD-Mobilenet-v2, YOLOv8n, YOLOv8s — infers **5–8× faster than the camera can deliver frames**, so the sensor bounds real-time throughput and the accelerator is substantially over-provisioned for the task. Sweeping power modes at a fixed ~29 fps output shows energy per frame falling monotonically as the mode is reduced (212 → 184 → **137 mJ**), **inverting** the compute-bound result. Segmenting the power logs by GPU activity explains why: draw during active samples is indistinguishable from idle, so **board power is essentially a static function of the selected power mode rather than of the inference performed**. The practical consequence is that under a sensor cap, energy optimization moves *off* the model and *onto* the platform — power mode and static configuration — since shrinking the network optimizes a cost that is already negligible.
+
+The study also documents several platform measurement pitfalls encountered along the way, including a detection tool over-reporting inference latency by ~5×, a 3× capture collapse traced to USB bandwidth under a raw pixel format, and power-mode identifiers that did not match vendor documentation. *(Full methodology in Appendices A–B; raw data in `data/`.)*
 
 **Keywords:** edge AI, embedded inference, Jetson Orin Nano, Ampere, Tensor Cores, TensorRT, INT8 quantization, object detection, benchmarking, energy efficiency
 
@@ -44,11 +52,14 @@ Given a fixed edge platform (Jetson Orin Nano 8GB Super) and a fixed sensor (USB
 - **H6 (the constraint inversion — the synthesis):** Because every detector has large compute headroom over the 30 fps camera ceiling, the **lowest** power mode will still meet the target, making it the **energy-optimal** choice — *inverting* H3/H5, where MAXN was most efficient (race-to-idle) because the GPU was compute-bound. Under the sensor constraint, running MAXN will spend extra power for **no** throughput gain, so the optimal config will favor the leanest viable mode.
 
 ### 1.5 Contributions
-1. A reproducible dual benchmark (compute microbenchmark + end-to-end pipeline) for the Jetson Orin Nano 8GB Super.
-2. A quantified architecture × precision × power-mode trade-off surface for Ampere edge hardware.
-3. An empirical measurement of the INT8 Tensor-Core speedup and of the "Super" MAXN uplift versus NVIDIA's headline claim.
-4. **A deployment synthesis under a real constraint:** identifying the energy-optimal configuration when a fixed 30 fps sensor — not the GPU — bounds throughput, and testing whether the optimal power mode *inverts* relative to the compute-bound regime (the "don't over-provision" result).
-5. An open harness and raw dataset (Appendices B–C).
+*This is a characterization and methodology study, not a novelty claim. Several of the conclusions below — that reduced clocks save power, that a slow sensor bottlenecks a fast accelerator — are well established in principle; the contribution is measuring them precisely on this platform, quantifying the magnitudes, and documenting what it takes to obtain trustworthy numbers.*
+
+1. **An instrumented, reproducible benchmark harness** for the Jetson Orin Nano Super covering both regimes: a compute microbenchmark (`trtexec` + `tegrastats`, driven by `run_config.sh`) and an end-to-end camera pipeline with independent wall-clock timing (`bench_e2e.py`).
+2. **A quantified architecture × precision × power-mode trade-off surface** (33 runs, R = 3) for Ampere edge hardware, including the INT8 Tensor-Core speedup and the measured "Super" uplift versus NVIDIA's headline claim.
+3. **A deployment characterization under a real sensor constraint**, quantifying how far the accelerator is over-provisioned (5–8×) and locating the minimum viable configuration.
+4. **A design principle supported by the power decomposition:** under a fixed-rate sensor, board draw is dominated by the *static* cost of the selected power mode rather than by the inference workload — so energy optimization belongs at the platform level, not the model level. This inverts the optimal power mode relative to the compute-bound case.
+5. **Documented platform measurement pitfalls** that would silently corrupt results: a detection tool over-reporting inference latency ~5×, capture rate collapsing 3× under a raw pixel format due to USB bandwidth, power-mode IDs diverging from vendor documentation, and a mode change requiring a reboot that hangs non-interactive automation.
+6. **An open harness and raw dataset** (Appendices B–C, `data/`), with every reported figure traceable to a named log.
 
 ---
 
@@ -246,17 +257,19 @@ Randomize or counterbalance run order across configurations so thermal drift doe
 
 Values are the mean of R = 3 runs; latency is `trtexec` GPU Compute Time. No configuration throttled (max θ ≤ 62 °C). *(Measured results in **bold**; template labels in plain text.)*
 
-| Model | Precision | Median L (ms) | p95 L (ms) | p99 L (ms) | T (FPS) | Engine build (s) |
-|---|---|---|---|---|---|---|
-| A2 ResNet-18 | FP32 | **1.55** | **1.56** | **1.56** | **643.9** | **16.3** |
-| A2 ResNet-18 | FP16 | **0.755** | **0.758** | **0.759** | **1318.4** | **26.2** |
-| A2 ResNet-18 | INT8 | **0.458** | **0.460** | **0.461** | **2170.3** | **32.0** |
-| A3 ResNet-50 | FP32 | **3.68** | **3.69** | **3.70** | **271.2** | **40.1** |
-| A3 ResNet-50 | FP16 | **1.87** | **1.88** | **1.88** | **533.4** | **69.3** |
-| A3 ResNet-50 | INT8 | **1.168** | **1.171** | **1.173** | **853.8** | **74.3** |
-| A5 VGG-16 | FP32 | **11.46** | **11.48** | **11.48** | **87.2** | **38.4** |
-| A5 VGG-16 | FP16 | **5.87** | **5.88** | **5.89** | **170.0** | **66.5** |
-| A5 VGG-16 | INT8 | **2.77** | **2.77** | **2.77** | **360.7** | **217.4** |
+| Model | Precision | Median L (ms) | p95 L (ms) | p99 L (ms) | T (FPS) | Engine build (s) | Engine size (MiB) |
+|---|---|---|---|---|---|---|---|
+| A2 ResNet-18 | FP32 | **1.55** | **1.56** | **1.56** | **643.9** | **16.3** | **45.0** |
+| A2 ResNet-18 | FP16 | **0.755** | **0.758** | **0.759** | **1318.4** | **26.2** | **22.6** |
+| A2 ResNet-18 | INT8 | **0.458** | **0.460** | **0.461** | **2170.3** | **32.0** | **11.7** |
+| A3 ResNet-50 | FP32 | **3.68** | **3.69** | **3.70** | **271.2** | **40.1** | **98.2** |
+| A3 ResNet-50 | FP16 | **1.87** | **1.88** | **1.88** | **533.4** | **69.3** | **49.3** |
+| A3 ResNet-50 | INT8 | **1.168** | **1.171** | **1.173** | **853.8** | **74.3** | **25.3** |
+| A5 VGG-16 | FP32 | **11.46** | **11.48** | **11.48** | **87.2** | **38.4** | **528.1** |
+| A5 VGG-16 | FP16 | **5.87** | **5.88** | **5.89** | **170.0** | **66.5** | **264.2** |
+| A5 VGG-16 | INT8 | **2.77** | **2.77** | **2.77** | **360.7** | **217.4** | **132.6** |
+
+> **Storage footprint scales exactly with bit width.** Each precision step halves the serialized engine (FP32 → FP16 → INT8), giving a consistent **3.9–4.0× reduction from FP32 to INT8** across all three architectures — matching the 32 → 8 bit reduction almost precisely. Weights memory tracks engine size to within ~1%, so the engine is essentially all weights with negligible structural overhead. The practical case is VGG-16: **528 MiB at FP32 versus 133 MiB at INT8**, which on a microSD-booted device with 8 GB of shared memory is the difference between a model that fits comfortably and one that strains the platform. Values extracted from the archived `trtexec` logs (`Created engine with size`).
 
 **Table 2. Power, energy, memory, thermal by power mode (fixed model/precision, e.g. ResNet-50 INT8).**
 
@@ -268,13 +281,17 @@ Mean of R = 3 runs. Total board power via `tegrastats` `VDD_IN`; energy = mean P
 | 15 W | **7.17** | **10.24** | **548.7** | **13.0** | **4332** | **54.7** | **No** |
 | MAXN Super | **8.84** | **14.22** | **853.8** | **10.3** | **4332** | **57.1** | **No** |
 
-**Table 3. Accuracy vs. precision (fixed image subset).**
+**Table 3. Accuracy vs. precision (fixed image subset).** — **OUT OF SCOPE; not collected.**
 
 | Model | FP32 top-1 | FP16 top-1 | INT8 top-1 | Δ FP16 | Δ INT8 |
 |---|---|---|---|---|---|
-| A2 | | | | | |
-| A3 | | | | | |
-| A5 | | | | | |
+| A2 ResNet-18 | — | — | — | — | — |
+| A3 ResNet-50 | — | — | — | — | — |
+| A5 VGG-16 | — | — | — | — | — |
+
+> **Why this table is empty, and what it costs the study.** Measuring classification accuracy across precisions requires three things this study did not build: a labelled ImageNet-val subset, a top-1/top-5 scoring harness, and — critically — an **INT8 calibration cache**. Without calibration an INT8 engine produces near-random outputs, so scoring it would measure a broken engine rather than INT8 as deployed (see A.5). That is a substantial, largely independent effort and was scoped out.
+>
+> **The consequence is explicit and carried through the report:** H1 and H2 are ruled on **speed only**. Every *measured* cost of quantization is lower — INT8 is 3–4× faster (Table 1), draws less power (Table 2), and occupies a quarter of the storage (Table 1) — and the single unmeasured cost is accuracy. Published results generally place INT8 top-1 loss on ImageNet classifiers below one point with good calibration, but that is **not** measured here and is not claimed. Note that Table 5 does *not* fill this gap: it measures *detection* accuracy across *models*, not classification accuracy across *precisions*.
 
 **Figure 1.** Latency vs. model params (log-log), one line per precision.
 ![Figure 1 — latency scaling](images/fig1_latency_scaling.png)
@@ -311,27 +328,60 @@ The question: does each detector still clear the **30 fps** requirement at *redu
 
 | Model | 7 W | 15 W | 25 W | MAXN | Min. viable mode |
 |---|---|---|---|---|---|
-| SSD-Mobilenet-v2 | — | — | — | ~240² | *(not swept)* |
+| SSD-Mobilenet-v2² | **75.4** ✅ | **151.9** ✅ | — | **240.2** ✅ | **7 W** |
 | YOLOv8n | **77.9** ✅ (4.54 W) | — | — | **252.8** ✅ (8.08 W) | **7 W** |
 | YOLOv8s | **45.7** ✅ (4.72 W) | **104.1** ✅ (7.26 W) | — | **159.3** ✅ (8.67 W) | **7 W** |
 
-² SSD's ~240 fps was measured in the camera pipeline (`detectNet`, incl. NMS), not `trtexec` — method differs from the YOLO rows, so it is not directly comparable and SSD was not swept across modes.
+² SSD's figures were measured **in the camera pipeline** (`bench_e2e.py` → `detectNet`, incl. NMS), not `trtexec`. Its row is internally consistent but not directly comparable to the YOLO rows; power for SSD is reported separately in Table 7 (pipeline draw at a fixed 30 fps) rather than in-cell.
 
 > **Tier-1 result:** **every configuration tested clears 30 fps, including the heaviest model in the lowest power mode.** YOLOv8s — the most demanding detector here — sustains **45.7 fps at 7 W**, still 1.5× the requirement, while YOLOv8n reaches 77.9 fps (2.6×). Moving 7 W → MAXN costs **~1.9× the board power** (4.7 → 8.7 W) to buy throughput the 30 fps camera can never deliver frames for. Under this sensor constraint the extra capability is unusable, so **7 W is the minimum viable mode for both models**.
 >
 > **Headroom caveat:** 1.5× margin at 7 W (YOLOv8s) is sufficient but not generous — a heavier model, higher input resolution, or burst load would erode it. The recommendation is "7 W suffices *for this workload*," not "7 W is always safe."
 >
-> *Still pending (H6):* whether 7 W is also the **energy-optimal** mode requires camera-pipeline board power at each mode — at a capped 30 fps the GPU idles between frames (66% duty at 7 W vs 19% at MAXN), so `trtexec`'s flat-out power does not answer it. See §7 RQ5/H6.
+> *Energy-optimality is resolved in Table 7.*
 
-**Table 5. Detection accuracy proxy on fixed clip.**
+**Table 7. The constraint inversion — board power at a fixed ~29 fps, by power mode (H6).**
 
-| Model | Correct | Missed | False+ | Mean confidence |
-|---|---|---|---|---|
-| B1 | | | | |
-| B3 | | | | |
-| B4 | | | | |
+SSD-Mobilenet-v2 through the full camera pipeline. **All three modes delivered identical output (e2e 28.96–28.99 fps)**, so any difference in draw is a genuine efficiency difference, not a difference in work done. Board power via `tegrastats` (`VDD_IN`); energy/frame = mean power ÷ measured e2e fps. *(Measured in **bold**.)*
 
-**Figure 5.** End-to-end vs. infer-only FPS (pipeline overhead / H4). *(insert)*
+| Power mode | e2e FPS | Infer-only FPS | Peak GPU util³ | Mean board power | **Energy per frame** |
+|---|---|---|---|---|---|
+| **7 W** | **28.99** | **75.4** | 77% | **3.97 W** | **137 mJ** ← optimal |
+| 15 W | **28.96** | **151.9** | 49% | **5.33 W** | **184 mJ** |
+| MAXN | **28.96** | **240.2** | 24% | **6.13 W**⁴ | **212 mJ** |
+
+³ **Peak**, not mean — the parser reports `max(GR3D_FREQ)`. *Mean* GPU utilization across these logs is only ~3%, so this column indicates the instantaneous ceiling reached, **not** a duty cycle. It should not be read as "the GPU is busy 77% of the time."
+⁴ MAXN is the mean of R = 3 (6.09 / 6.12 / 6.19 W); 15 W and 7 W are single runs (R = 1) — see §8.
+
+> **The inversion (H6 — supported).** Energy per frame falls **monotonically as the power mode is reduced**: MAXN consumes **1.55× the energy of 7 W for identical output** (all three modes delivered 28.96–28.99 fps). This is the **opposite** of the compute-bound result in Experiment A, where MAXN was the *most* efficient mode (Table 2, "race-to-idle").
+>
+> **Mechanism — static draw dominates.** Segmenting the `tegrastats` logs by GPU activity shows mean power during GPU-active samples is **indistinguishable from GPU-idle samples** (3.97 vs 3.98 W at 7 W; 5.32 vs 5.35 W at 15 W). The detection workload adds almost nothing measurable on top of the platform's baseline draw. Board power under this sensor cap is therefore essentially a **static function of the selected power mode** (clocks, voltage, online core count), not a function of the inference being performed. Since every mode produces identical output, the cheapest sufficient mode simply wins.
+>
+> **The general principle:** in Experiment A you pay **per unit of work**, so finishing faster converts speed into throughput and race-to-idle wins. Under a fixed-rate sensor you pay **per unit of time**, output is pinned regardless, and the only lever is instantaneous draw. Race-to-idle is a strategy for converting speed into work; when there is no additional work to convert into, it buys only a more expensive way to wait.
+>
+> *Note on comparability:* the mJ values here are **not** comparable to Table 2's. Experiment A's energy is `power × compute-latency` (energy during inference only, GPU near-saturated); Table 7's is `power ÷ frame-rate` (whole-board energy for a full frame slot, including idle). Only the *direction within each regime* is being compared.
+
+**Table 5. Class-presence accuracy on the fixed clip.**
+
+Ten frames sampled from a 73-frame desk-pan clip captured on the same USB camera (`data/clip/`), scored against a human-verified ground-truth manifest (`data/clip_ground_truth.csv`, 29 class instances). **This measures class presence, not detection**: the ground truth lists which COCO classes appear in each frame without bounding boxes, so *localization is not assessed* — a model that reports the right class with a badly placed box still scores as correct. Per frame, comparing the set of true classes against the set of detected classes: **correct** = present and reported, **missed** = present and not reported, **false +** = reported and not present. Confidence threshold **0.5 for all models** (see note). Scored by `scripts/score_accuracy.py`. *(Measured in **bold**.)*
+
+| Model | Correct | Missed | False + | Recall | Precision | Mean confidence | Engine size (MiB) |
+|---|---|---|---|---|---|---|---|
+| B1 SSD-Mobilenet-v2 (300²) | **6** | **23** | **2** | **21%** | **75%** | **0.72** | **36.0**⁵ |
+| B3 YOLOv8n (640²) | **9** | **20** | **2** | **31%** | **82%** | **0.70** | **8.8** |
+| B4 YOLOv8s (640²) | **14** | **15** | **3** | **48%** | **82%** | **0.75** | **24.3** |
+
+⁵ SSD's engine size is read from the `detectNet` load output (FP16, built by jetson-inference from the bundled `.uff`); the YOLO figures come from the archived `trtexec` logs in `data/raw/expB_compute/`. All three are FP16.
+
+> ⚠️ **Threshold matching was necessary.** `detectNet` defaults to a 0.5 confidence threshold while Ultralytics defaults to **0.25**; scoring the tools at their defaults credits YOLO for detections SSD would never emit. Re-scoring YOLO at 0.5 changes its numbers materially (YOLOv8n recall 41% → 31%, false positives 5 → 2; YOLOv8s 55% → 48%, 6 → 3). **The model ordering is unchanged at either threshold**, so the ranking is robust, but the magnitudes are not comparable unless the threshold is matched. Note also that SSD's logged output was *already* filtered at 0.5 by `detectNet`, so its sub-0.5 detections are unrecoverable and it cannot be scored downward for comparison.
+>
+> **Result.** Detection quality is **monotonic in model capacity**: SSD-Mobilenet-v2 → YOLOv8n → YOLOv8s, with YOLOv8s recovering **2.3× as many objects as SSD** (14 vs 6). Precision is similar across models (75–82%), so the difference is almost entirely **recall** — the larger models miss less rather than guess better.
+>
+> The clearest discriminator is the **`remote`**: a dark remote on a dark desk, which SSD failed to detect in *any* of its six appearances while both YOLO models found it in most. SSD's 300×300 input appears to be the limiting factor against YOLO's 640×640. Two further observations: (i) the **desk itself** (`dining table`, present in 8 frames) was rarely detected by any model and accounts for a large share of the misses; (ii) recall is low across the board (21–48%) because the clip is deliberately difficult — a cheap USB webcam, a dark desk, uneven exposure and motion blur from the pan. These are *realistic* edge conditions, not a laboratory best case, and the numbers should be read as such.
+>
+> **Storage does not trade against accuracy here — it compounds with it.** SSD-Mobilenet-v2 has the **largest** engine of the three (36.0 MiB) while delivering the **worst** recall (21%); YOLOv8s is **33% smaller** (24.3 MiB) and recovers 2.3× as many objects, and YOLOv8n is smaller still at 8.8 MiB. The older, lighter-input architecture is therefore dominated on every axis measured in this study — accuracy, engine size, and (at MAXN) throughput — with its only remaining advantage being that it ships pre-integrated with jetson-inference. This removes the usual "smaller model to save space" argument from the deployment decision entirely.
+
+*(No Figure 5. The end-to-end vs. infer-only comparison it would have shown is carried numerically by Tables 4, 6 and 7, which give the full FPS, utilization and power breakdown across models and power modes.)*
 
 ---
 
@@ -342,13 +392,17 @@ The question: does each detector still clear the **30 fps** requirement at *redu
 - **RQ1 / H3 (scaling):** *How did latency and energy scale with model size, and was energy super-linear once throttling engaged?* — Latency and energy both scaled **monotonically** with model size at every precision (Fig. 1, Table 1). FP32 median latency rose 1.55 → 3.68 → 11.46 ms across ResNet-18 → ResNet-50 → VGG-16, and MAXN FP32 energy rose 15.6 → 36.6 → 143.9 mJ/inference. The scaling is not uniform, however: VGG-16 has ~5.3× the parameters of ResNet-50 but only ~3.9× the energy, indicating parameter count and compute cost are not proportional — VGG's cost is dominated by its large fully-connected/memory-bound layers rather than raw FLOPs. **H3's second clause (super-linear energy once throttling engages) could not be tested: nothing throttled.** Even VGG-16 FP32 at MAXN peaked at only 62 °C — well under the 80 °C flag and the 100 °C junction limit — at 21 °C ambient with the stock active cooler. H3 is therefore ruled *unsupported / untestable in this thermal regime*; the finding is that the Orin Nano's stock cooling has ample headroom for these workloads.
 - **RQ2 / H1–H2 (precision):** *What were the FP16 and INT8 speedups (and accuracy Δ)? Was H2 — INT8 substantially faster on Ampere — supported, and what is the Tensor-Core reason vs. the old Maxwell Nano?* — FP16 delivered **~2.0×** the throughput of FP32 (2.05× / 1.97× / 1.95× for ResNet-18/50/VGG-16; Fig. 3) — a ~49% latency reduction, well above H1's predicted ~30%. INT8 delivered a **further 1.6–2.1×** over FP16 (1.65× / 1.60× / 2.12×) and 3.1–4.1× over FP32 overall, again exceeding H2's predicted ~30%. **H2 (INT8 substantially faster on Ampere) is strongly supported on speed.** *Mechanism:* the Ampere 3rd-generation Tensor Cores run FP16 at ~2× the FP32 rate and INT8 at a further multiple (INT8 throughput is the basis of the board's 67-TOPS rating). This is hardware-specific — the original **Maxwell** Jetson Nano has no INT8 Tensor-Core datapath, so INT8 there would yield little-to-no speedup (or worse); the large INT8 gains here are an Ampere property. **Caveat: these verdicts are speed-only.** The accuracy cost of FP16/INT8 is measured in **Table 3 [pending]**; H1's "≈ equal accuracy" and the *net* value of the INT8 speedup cannot be confirmed until then.
 - **RQ3 / H5 ("Super"):** *What was the 15 W → MAXN uplift, the extra power and thermal cost; did it reach NVIDIA's ~1.7× claim; and was energy-per-inference better at Super or worse?* — The 15 W → MAXN uplift for ResNet-50 INT8 was **1.56×** (548.7 → 853.8 fps; Fig. 4, Table 2) — below NVIDIA's headline **~1.7×**, so **H5 is partially supported (~92% of the claim)**. The cost was small: **+1.67 W** mean power and **+2.4 °C**, far below the predicted +10 W / +10 °C. Both the shortfall and the low cost share one cause: ResNet-50 INT8 at batch 1 draws only ~8.8 W mean — nowhere near MAXN's ~25 W envelope — so the workload **does not saturate the GPU**, and the higher clocks translate into less than the full headline uplift (which is measured on GPU-saturating workloads). Energy-per-inference was **best at MAXN** (10.3 mJ) and worst at 7 W (17.6 mJ): the higher-power mode is *more* energy-efficient because each inference finishes faster (**"race-to-idle"** — the shorter runtime outweighs the higher instantaneous power).
-- **RQ4 / H4 (deployment):** *What is the gap between infer-only and end-to-end FPS, and where is the bottleneck (camera bandwidth / preprocessing / rendering)?* — **Confirmed for the lightweight model (Table 4).** SSD-Mobilenet-v2 infers at **~240 fps** but the pipeline delivers only **~29 fps** — an ~8× gap — with the **GPU only ~24% utilized** (vs 98–99% in Exp. A). The bottleneck is **camera capture**, not compute: the USB webcam caps at 30 fps, and the *pixel format* is decisive — raw YUYV at 720p exceeds USB 2.0 bandwidth (~9.6 fps) while MJPG restores ~29 fps. So for a lightweight detector, deployment throughput is set by the sensor/interface, and the expensive GPU sits idle ¾ of the time (mean power falls to 6.1 W). **H4 supported.** *Pending:* YOLOv8n/s (B3/B4) — heavier models whose infer-only rate may drop below 30 fps, flipping the bottleneck back to the GPU (the informative contrast).
-- **Practical recommendation:** *For a given FPS target, what is the best configuration and why?* — INT8 at MAXN is the **throughput-per-watt optimum** for every model (ResNet-50: 96.6 inf/s/W at MAXN vs 76.5 at 15 W vs 56.6 at 7 W) — the lower-power modes cost *both* throughput and efficiency, so they are justified only under a hard power/thermal cap, not to save energy. For model choice, pick the **smallest architecture that meets the task's accuracy requirement and run it INT8 at MAXN**: ResNet-18 INT8 (2170 fps, 3.9 mJ) is the energy/throughput Pareto winner (Fig. 2), with ResNet-50 INT8 (854 fps, 10.3 mJ) the mid option when more capacity is needed. The accuracy floor that decides between them comes from **Table 3 [pending]**.
+- **RQ4 / H4 (deployment):** *What is the gap between infer-only and end-to-end FPS, and where is the bottleneck (camera bandwidth / preprocessing / rendering)?* — **Confirmed for the lightweight model (Table 4).** SSD-Mobilenet-v2 infers at **~240 fps** but the pipeline delivers only **~29 fps** — an ~8× gap — with the **GPU only ~24% utilized** (vs 98–99% in Exp. A). The bottleneck is **camera capture**, not compute: the USB webcam caps at 30 fps, and the *pixel format* is decisive — raw YUYV at 720p exceeds USB 2.0 bandwidth (~9.6 fps) while MJPG restores ~29 fps. So deployment throughput is set by the sensor/interface, not the accelerator (mean power falls to 6.1 W). **H4 supported — and more strongly than anticipated.** The expectation was that heavier detectors would flip the bottleneck back to the GPU, providing a contrast; they did not. YOLOv8n (252.8 fps) and YOLOv8s (159.3 fps) also clear the 30 fps ceiling by 5–8×, and even at the *lowest* power mode YOLOv8s sustains 45.7 fps (Table 6). **No configuration tested on this platform is compute-bound under a 30 fps USB camera** — the crossover lies beyond the models examined here, which is noted as future work (§9).
+- **Practical recommendation:** *For a given FPS target, what is the best configuration and why?* — **The answer depends on which regime you are in, and the two regimes give opposite advice.**
+  **Compute-bound** (the workload can consume all available throughput — batch processing, offline inference, a fast sensor): run **INT8 at MAXN**. It is the throughput-per-watt optimum for every model (ResNet-50: 96.6 inf/s/W at MAXN vs 76.5 at 15 W vs 56.6 at 7 W), because saved time converts directly into additional work. Choose the smallest architecture meeting the accuracy requirement — ResNet-18 INT8 (2170 fps, 3.9 mJ) is the Pareto winner (Fig. 2), ResNet-50 INT8 (854 fps, 10.3 mJ) the mid option; the accuracy floor deciding between them comes from **Table 3 [pending]**.
+  **Sensor-bound** (throughput is externally capped, as in Exp. B): run the **lowest power mode that meets the deadline — 7 W here — with the *most capable* model that still clears it, which is YOLOv8s**. At a fixed 29 fps, 7 W delivers identical output for **35% less power** than MAXN (Table 7), and because static draw dominates, shrinking the network optimizes a cost that is already negligible while giving up real accuracy (YOLOv8s recovers 2.3× as many objects as SSD-Mobilenet — Table 5). Note this inverts the compute-bound advice: there, pick the *smallest* sufficient model; here, pick the *largest* affordable one, because the accuracy is effectively free. Verify headroom rather than assuming it: YOLOv8s retains only 1.5× margin at 7 W, so a heavier model or higher-resolution sensor would require re-checking.
 - **Surprises / anomalies:** *What was unexpected?* — (1) **MAXN was the most energy-efficient mode despite the highest power** (race-to-idle) — counter to the intuition that low-power modes save energy. (2) **Nothing throttled**, even VGG-16 FP32 at MAXN (62 °C) — the stock cooler has large headroom at 21 °C ambient. (3) **VGG-16 INT8 build time was disproportionately large** (~217 s vs ~74 s for ResNet-50 INT8), reflecting the extra INT8 tactic search over VGG's large layers. (4) The 1.56× uplift undershot the 1.7× claim because this workload does not saturate the GPU's power envelope.
-- **RQ5 / H6 (optimal config under the sensor constraint — the synthesis):** *Given the 30 fps camera cap, what is the minimum-cost config, and does the energy-optimal power mode invert relative to the compute-bound case?* — **Sufficiency answered; energy-optimality still pending.**
+- **RQ5 / H6 (optimal config under the sensor constraint — the synthesis):** *Given the 30 fps camera cap, what is the minimum-cost config, and does the energy-optimal power mode invert relative to the compute-bound case?* — **Both parts answered; model selection pending Table 5.**
   **(a) Minimum viable mode — resolved (Table 6).** The power-mode sweep shows **every configuration clears 30 fps, including the heaviest model at the lowest power setting**: YOLOv8s sustains **45.7 fps at 7 W** (1.5× the requirement) and YOLOv8n **77.9 fps** (2.6×). Since the camera cannot deliver more than 30 fps, the additional 3.5× throughput available at MAXN is **unusable**, yet costs ~1.9× the board power (4.7 → 8.7 W). **The minimum viable configuration is therefore 7 W for both detectors** — the leanest mode still satisfies the real-time requirement, so provisioning beyond it buys nothing under this sensor. This is the practical "don't over-provision" result: capability that the rest of the system cannot feed is spent power, heat, and hardware cost with no return.
-  **(b) Energy-optimality — pending, and the outcome is genuinely uncertain.** Whether 7 W is also the *energy*-optimal mode does **not** follow from (a), because at a capped 30 fps the GPU idles between frames rather than racing to more work: duty cycle is ~66% at 7 W but only ~19% at MAXN. Energy per frame is then `busy·P_busy + idle·P_idle`, and MAXN's cheaper compute (~55 mJ vs ~103 mJ of busy energy per frame) is offset by ~27 ms of idle draw. A first-order estimate using the measured ~3.3 W idle floor puts the two within a few percent (~141 vs ~144 mJ/frame) — i.e. **H6's inversion may be weak or absent, with the honest finding being that power mode matters little once idle dominates.** The deciding unknown is whether idle power itself falls in lower modes (lower clocks, fewer online cores), which the single-mode idle figure cannot tell us. Resolving this requires **camera-pipeline board power measured at 7 W / 15 W / MAXN** — `trtexec`'s flat-out power cannot answer it.
-  **(c) Which model — pending Table 5.** The accuracy comparison on the fixed clip fixes the remaining constraint: given that all candidates meet 30 fps at 7 W, model choice reduces to detection quality per unit energy.
+  **(b) Energy-optimality — resolved; H6 supported (Table 7).** Measuring whole-board power through the camera pipeline at each mode, with all three delivering **identical output (e2e 28.96–28.99 fps)**, energy per frame falls monotonically as the power mode is reduced: **212 mJ at MAXN → 184 mJ at 15 W → 137 mJ at 7 W.** MAXN consumes **1.55×** the energy of 7 W to produce exactly the same 29 fps of detections. **This inverts the Experiment A result**, where MAXN was the *most* energy-efficient mode. Decomposing the power logs by GPU activity identifies the mechanism: mean draw during GPU-active samples is **indistinguishable from GPU-idle samples** (3.97 vs 3.98 W at 7 W; 5.32 vs 5.35 W at 15 W), so the inference workload contributes almost nothing measurable above the platform baseline. **Board power under a sensor cap is therefore essentially a static function of the selected power mode** — clocks, voltage, and online core count — rather than of the inference being performed. Since all modes yield identical output, the cheapest sufficient mode wins by default. Race-to-idle is a mechanism for converting speed into *work*; when output is externally pinned there is no additional work to convert into, so higher clocks purchase only a more expensive way to wait. **The decisive variable is not the hardware or the model, but whether additional work exists to absorb additional speed.**
+  *(A first-order estimate made before this measurement, assuming a mode-independent idle floor, predicted near-parity between modes and was wrong — idle power itself scales down with the mode. The prediction is recorded here because the error is instructive: the same reasoning would have understated the benefit of low-power operation in a design review.)*
+  **(c) Which model — resolved (Table 5).** With every candidate meeting 30 fps at 7 W, throughput ceases to discriminate and model choice reduces to **detection quality per unit energy**. Class-presence accuracy on the fixed clip is monotonic in model capacity: SSD-Mobilenet-v2 recovers 6 of 29 instances (21% recall), YOLOv8n 9 (31%), and YOLOv8s 14 (48%) — **YOLOv8s finds 2.3× as many objects as SSD**. Precision is comparable across all three (75–82%), so the separation is recall, not discrimination. Because all three run far above the frame rate the sensor can supply, and because board power under the cap is dominated by static draw rather than by the workload (Table 7), **the accuracy gain is effectively free**: YOLOv8s costs no usable throughput and negligible additional energy relative to SSD at the same power mode. **The recommended configuration is therefore YOLOv8s at 7 W** — the most capable detector that still clears the deadline, in the leanest power mode. This is the opposite of the usual edge-deployment instinct to reach for the smallest model; that instinct is correct only when compute is the binding constraint, which here it is not.
+  *Caveat:* Table 5 rests on 10 frames and 29 instances with class-presence rather than localization scoring, so it establishes an ordering rather than a precise accuracy figure. The 1.5× throughput headroom YOLOv8s retains at 7 W is also the thinnest of the three, so a heavier sensor or model would require re-verification.
 
 **Hypothesis scorecard**
 
@@ -357,28 +411,44 @@ The question: does each detector still clear the **30 fps** requirement at *redu
 | H1 FP16 faster, ~equal accuracy | **Partial** — faster confirmed (~2.0×); accuracy pending | Fig. 3, Table 1; accuracy → Table 3 [pending] |
 | H2 INT8 substantially faster on Ampere | **Yes (speed)** — strongly (+1.6–2.1× over FP16) | Fig. 3, Table 1 |
 | H3 super-linear energy w/ throttling | **No / untestable** — nothing throttled (θ ≤ 62 °C) | Table 2 |
-| H4 pipeline < compute FPS | **Yes** (lightweight model) — ~29 vs ~240 fps, GPU ~24% | Table 4; YOLO B3/B4 pending for the GPU-bound contrast |
+| H4 pipeline < compute FPS | **Yes** — ~29 vs 75–253 fps across all three detectors; no config tested was compute-bound | Tables 4, 6 |
 | H5 Super ≈ 1.7× over 15 W | **Partial** — measured 1.56× (~92% of claim) | Fig. 4, Table 2 |
-| H6 optimal power mode inverts under sensor constraint | **Partial** — *sufficiency* confirmed (7 W meets 30 fps for both YOLO models, at ~½ the power of MAXN); *energy-optimality* pending pipeline power, and may prove weak (idle dominates) | Table 6; §7 RQ5/H6 |
+| H6 optimal power mode inverts under sensor constraint | **Yes** — 7 W meets 30 fps *and* is energy-optimal (137 vs 212 mJ/frame at MAXN, 1.55×); exactly inverts the Exp. A race-to-idle result | Tables 6, 7; §7 RQ5/H6 |
 
 ---
 
 ## 8. Threats to Validity / Limitations
 - **Thermal drift** across a session (mitigation: cooldowns, logged θ; residual risk: [____]).
 - **INT8 accuracy** depends heavily on calibration set quality; a poor calibration set can unfairly penalize INT8 (state your calibration data).
-- **Accuracy proxy** in Track B is not full mAP (state impact).
+- **The Track B accuracy proxy measures class presence, not detection.** The ground truth (`data/clip_ground_truth.csv`) lists which COCO classes appear per frame without bounding boxes, so **localization is entirely unassessed** — a model reporting the correct class with a badly placed box scores as correct, and mAP/IoU cannot be computed. The sample is also small: 10 frames, 29 instances, six of which are the same book-and-remote scene. Table 5 therefore establishes an *ordering* between models, not a precise accuracy figure; differences of one or two instances are within noise. Full mAP on a box-annotated clip is future work.
+- **Ground-truth labels were AI-assisted.** Frame labels were proposed by an AI assistant via visual inspection and then verified and corrected by the author (the desk, initially omitted, was added on review after three independent detectors reported `dining table`). No model was trained on these labels — they are used only for scoring — but two risks are acknowledged: label error propagates identically into every model's score, and the annotator being itself a vision model raises a circularity risk on frames where it may share failure modes with the detectors under test.
+- **Detector confidence thresholds differ by default and must be matched.** `detectNet` defaults to 0.5, Ultralytics to 0.25. Scoring at tool defaults inflated YOLO's recall *and* its false positives relative to SSD; Table 5 re-scores YOLO at 0.5 for parity. The model ordering is unchanged either way, but SSD's logged output was already filtered at 0.5 before capture, so it cannot be re-scored downward — a symmetrical comparison at a lower threshold is not recoverable from the archived data.
 - **Single device** — no unit-to-unit variance; results may not generalize to other Orin Nanos or to Orin NX/AGX (which additionally have DLA).
 - **Power measurement** via on-board INA sensors (`VDD_IN`) is coarse and board/JetPack-dependent; field names differ across revisions — verify against your `tegrastats` output.
+- **Uneven repeat counts in the Table 7 power sweep** — the MAXN pipeline figure is the mean of R = 3, but the 15 W and 7 W figures are single runs (R = 1). The effect size is large (1.55× between extremes) and monotonic, and the R = 3 spread at MAXN was narrow (6.09–6.19 W, ~1.6%), so the conclusion is unlikely to be noise — but the low-power points lack the repeat evidence applied elsewhere in this study.
 - **Thermal-zone reads are unreliable** — several Orin `thermal_zone*/temp` sysfs nodes intermittently return `EAGAIN` ("Resource temporarily unavailable"). Start-temperature reads therefore tolerate failures and take the hottest *readable* zone; per-run peak θ is taken from `tegrastats`' `tj@` field instead, which is stable.
 - **Camera as confound** — USB bandwidth caps FPS independent of the model, and the *pixel format* matters: measured capture was **~9.6 fps with raw YUYV** (720p exceeds USB 2.0 bandwidth) vs **~30 fps with MJPG** (compressed). End-to-end FPS is therefore dominated by the camera/codec, not the model, for lightweight detectors (H4). Record the codec used.
-- Other: [____]
+- **Loose measurement windows in the Table 7 power sweep.** The `tegrastats` logger was started and stopped manually around each pipeline run, so the logs span 161 s (7 W) and 326 s (15 W) for a benchmark of roughly 25 s — and in opposite directions relative to the run: cross-referencing host log timestamps against the harness's completion time shows the 7 W log ended ~19 s *before* its run finished, while the 15 W log continued ~113 s *after*. The means therefore include model loading, camera initialization, and idle. Two factors limit the impact: (i) power during GPU-active and GPU-idle samples is indistinguishable within each mode, so the averaging window has little leverage on the result; and (ii) the trailing idle in the 15 W log biases that figure *downward*, which would only widen the measured gap if corrected. The **direction** of the H6 result is therefore robust, but the absolute values should be read as approximate rather than as clean "power while sustaining 29 fps." A tightened re-run — ideally with the harness emitting start/end timestamps so the measurement phase can be sliced from the log programmatically — would remove the human-timing variable.
+- **Static/dynamic power was inferred, not directly isolated.** The "static draw dominates" conclusion rests on comparing GPU-active and GPU-idle samples *within* a running pipeline. It was not confirmed by the cleaner test of measuring true idle power per mode with no pipeline running and subtracting. That decomposition would convert the inference into a direct demonstration.
+- **Conclusions are confirmatory, not novel.** That reduced clocks lower power draw, and that a slow sensor bottlenecks a fast accelerator, are established results; frequency scaling to just meet a deadline is standard practice in real-time systems. The contribution here is quantitative characterization on this specific platform and the methodology required to obtain trustworthy numbers — not the discovery of the underlying principles.
 
 ---
 
 ## 9. Conclusion and Future Work
-Summarize the trade-off surface in 3–5 sentences and give the one-line deployment guideline you derived. State plainly whether the "Super" mode earned its headline number on your unit. [____]
 
-Future work: INT8 + 2:4 structured sparsity; comparison against an original Maxwell Jetson Nano to isolate the Tensor-Core effect; comparison against Orin NX / AGX (which add DLA); batching; input-resolution sweep; benchmarking transformer-based detectors (DETR/RT-DETR) or a small VLM, which the Orin can run and the classic Nano cannot; ONNX Runtime vs. TensorRT. [____]
+The trade-off surface on this platform is steep and well-behaved. Numerical precision is the dominant compute lever: FP16 roughly doubles throughput over FP32 and INT8 adds a further 1.6–2.1×, for an overall 3–4× — gains that are specific to the Ampere third-generation Tensor Cores and would not transfer to the original Maxwell Jetson Nano. Model architecture scales latency and energy monotonically with size, though not proportionally to parameter count. Nothing throttled at any point (θ ≤ 62 °C at 21 °C ambient), so the stock cooler has substantial headroom for these workloads.
+
+**Did "Super" earn its headline number?** Partly. The measured 15 W → MAXN uplift was **1.56×** against NVIDIA's claimed ~1.7×, about 92% of the claim. The shortfall is explained rather than anomalous: a batch-1 detection workload draws only ~8.8 W, well inside MAXN's ~25 W envelope, so it never saturates the GPU that the headline figure assumes.
+
+**The deployment result is the more consequential one.** Paired with a 30 fps USB webcam, every detector tested runs 5–8× faster than frames arrive — the sensor, not the accelerator, sets real-time throughput. Sweeping power modes at a fixed ~29 fps output, energy per frame falls monotonically as the mode is reduced (212 → 184 → 137 mJ), inverting the compute-bound conclusion. Decomposing the logs shows why: power during GPU-active samples is indistinguishable from idle, so draw is essentially a static function of the power mode rather than of the inference performed.
+
+With throughput no longer discriminating between models, selection falls to accuracy. On the fixed clip, class-presence recall is monotonic in capacity — SSD-Mobilenet-v2 21%, YOLOv8n 31%, YOLOv8s 48% — so the largest detector recovers **2.3× as many objects** as the smallest. Because none of them is compute-bound and board power is dominated by static draw, **that accuracy is effectively free**. The recommended configuration is therefore **YOLOv8s at 7 W**: the most capable model that still clears the deadline, in the leanest power mode. That inverts the usual edge instinct to reach for the smallest network — an instinct that is correct only when compute is the binding constraint.
+
+**The deployment guideline, in one line:** *when throughput is externally capped, select the lowest power mode that meets the deadline and the largest model that fits inside it — the workload is already nearly free, so the remaining energy is platform configuration and the remaining accuracy is yours for the taking.*
+
+The broader point is that the correct configuration depends on which resource is scarce. Compute-bound, you pay per unit of work and racing to idle wins. Sensor-bound, you pay per unit of time and minimizing instantaneous draw wins. Same board, same models, opposite answers — and a system characterized only in the first regime will be misconfigured in the second.
+
+**Future work.** The most informative next step would be locating the crossover: scaling model complexity (YOLOv8m/l, higher input resolution) until a configuration can no longer hold 30 fps at each power mode, producing a minimum-viable-mode-versus-complexity curve that functions as a design tool rather than a single operating point. Beyond that: isolating static from dynamic power by measuring true idle draw per mode; testing whether `jetson_clocks` — standard tuning advice — is counterproductive for sensor-capped deployment, since it disables the runtime power management that would otherwise reduce idle draw (see `NOTES.md`); quantifying peripheral and fan contributions to the static floor, which dominates here; INT8 + 2:4 structured sparsity; comparison against an original Maxwell Jetson Nano to isolate the Tensor-Core effect, and against Orin NX/AGX which add DLA; batching; and transformer-based detectors (DETR/RT-DETR) or a small VLM, which this board can run and the classic Nano cannot.
 
 ---
 
@@ -738,6 +808,36 @@ python3 bench_e2e.py --model ssd-mobilenet-v2 --frames 1000 --tag B1_INT8_SUPER_
 
 > Power/RAM/GPU-util (remaining Table 4 columns) come from `tegrastats` run **on the host** in a parallel session during the run (the inference container does not include `tegrastats`).
 
+**B.4 Class-presence accuracy procedure (Experiment B, Table 5)**
+
+*Record the clip.* Captured on the same USB camera, written as a JPEG sequence rather than video — `video-viewer` **crashes with `double free or corruption` immediately after the first frame** when writing to the image writer, under both MJPG and raw YUYV, so `detectnet` with the overlay disabled is used instead (that path is proven on this build). `--overlay=none` is required: box annotations would contaminate frames used for ground-truth labelling.
+```bash
+mkdir -p /jetson-inference/data/clip
+detectnet --network=ssd-mobilenet-v2 --overlay=none \
+  /dev/video0 /jetson-inference/data/clip/frame_%04d.jpg      # Ctrl-C to stop
+```
+Capture rate is irrelevant here (only images are needed), so the default raw YUYV path is acceptable despite its ~9.6 fps ceiling.
+
+*Sample and label.* Every tenth frame is sampled (10 of 73) and each is labelled with the COCO classes visibly present — **no bounding boxes**, so this measures class presence, not localization. Labels live in `data/clip_ground_truth.csv` with per-frame difficulty ratings and the AI-assisted/author-verified provenance note (§8).
+
+*Run the detectors.* SSD runs **one frame per invocation**, because feeding a sequence yields an unattributable stream — frames with zero detections print nothing, so detections cannot be mapped back to frames by counting output blocks:
+```bash
+for f in 0000 0005 0010 0015 0020 0030 0040 0050 0060 0070; do
+  echo "=== frame_$f ==="
+  detectnet --network=ssd-mobilenet-v2 \
+    /jetson-inference/data/clip_sampled/frame_$f.jpg \
+    /jetson-inference/data/out_ssd/frame_$f.jpg 2>&1 | grep -E "objects detected|detected obj"
+done 2>&1 | tee /jetson-inference/data/ssd_detections.log
+```
+YOLO runs **on the host** with Ultralytics — detection output depends only on weights and input, not on the device, so this avoids the fact that `detectNet` cannot decode YOLO output. (Host inference is FP32 PyTorch versus FP16 TensorRT on device; the effect on detection quality is negligible but is noted.)
+```bash
+yolo predict model=yolov8n.pt source=./data/clip_sampled/ save_txt=True save_conf=True
+yolo predict model=yolov8s.pt source=./data/clip_sampled/ save_txt=True save_conf=True
+```
+> ⚠️ **Match the confidence threshold.** `detectNet` defaults to 0.5, Ultralytics to 0.25. Scoring at tool defaults credits YOLO for detections SSD would never emit. `scripts/score_accuracy.py` re-filters YOLO to 0.5; pass a different threshold as its first argument to check sensitivity.
+
+*Score.* `python scripts/score_accuracy.py 0.5` compares the set of detected classes against the set of true classes per frame and reports correct / missed / false-positive / recall / precision / mean confidence per model, plus a per-frame breakdown.
+
 ---
 
 ## Appendix C — Data collection sheets (raw)
@@ -751,9 +851,15 @@ python3 bench_e2e.py --model ssd-mobilenet-v2 --frames 1000 --tag B1_INT8_SUPER_
 | | | | | | | | | | | | |
 
 **C.2 Fixed image/clip manifest** (for reproducible accuracy)
-- Classification image IDs used: [____]
-- INT8 calibration set (source + count): [____]
-- Detection clip filename + frame count + hand-labels location: [____]
+
+- **Classification image IDs used:** — none. Table 3 was scoped out (§6.1); no ImageNet-val subset was assembled.
+- **INT8 calibration set (source + count):** — none. INT8 engines in Experiment A were built **without** a calibration cache, which is valid for the latency/throughput/energy measurements reported (the arithmetic executes identically) but means INT8 *accuracy* was never assessable. See A.5 and the Table 3 note.
+- **Detection clip:** `data/clip/` — **73 frames**, 1280×720, JPEG, captured from the "GENERAL WEBCAM" USB camera at raw YUYV (~9.6 fps, ≈7.6 s), single slow pan across a desk then onto a chair. Recorded via `detectnet --overlay=none` (see B.4).
+- **Sampled subset scored:** `data/clip_sampled/` — every tenth frame: `frame_0000, 0005, 0010, 0015, 0020, 0030, 0040, 0050, 0060, 0070` (10 frames, **29 class instances**).
+- **Ground truth:** `data/clip_ground_truth.csv` — COCO class names per frame, **no bounding boxes** (class presence only), with per-frame difficulty ratings and per-frame exclusion notes. Labels were AI-proposed and author-verified; the desk (`dining table`) was added on review after three independent detectors reported it (§8).
+- **Detector output:** SSD → `data/ssd_detections.log`; YOLOv8n/s → `data/yolo_out/{n,s}/labels/*.txt` (one file per frame, `class xc yc w h conf`).
+- **Scoring:** `scripts/score_accuracy.py`, confidence threshold **0.5** for all models (see the threshold warning in B.4).
+- **Scene contents across the clip:** book, remote, cup, cell phone, chair, dining table (desk). Objects deliberately excluded as non-COCO or uncertain: cable bundles, a fabric pouch, hand tools, a waste bin, a broom, and a possible refrigerator.
 
 **C.3 Environment snapshot** (paste `jetson_release` and `nvpmodel -p --verbose`):
 
@@ -777,17 +883,13 @@ Confirmed `nvpmodel` power modes (from `nvpmodel -p --verbose`, JP 6.2.1):
 ## Appendix D — Reproducibility checklist
 - [ ] Exact JetPack/CUDA/TensorRT/jetson-inference versions recorded (§4.2)
 - [x] Confirmed whether MAXN "Super" mode is available; mode-ID↔wattage mapping recorded (C.3: 0=15W, 1=25W, 2=MAXN_SUPER, 3=7W)
-- [ ] Power supply type/rating recorded; headroom above MAXN Super confirmed
-- [ ] Warm-up and N fixed and stated (W=[__], N=[__], R=[__])
-- [ ] INT8 calibration set documented (C.2)
-- [ ] Same camera, lighting, scene/clip across runs
-- [ ] Cooldowns + temperature logged; throttled runs flagged
-- [ ] `tegrastats` power rail (VDD_IN?) verified against actual log
-- [ ] Fixed image/clip manifest saved (C.2)
-- [ ] Raw CSVs + tegrastats logs archived alongside this paper
-- [ ] Harness scripts included (Appendix B)
-- [ ] Run order randomized/counterbalanced where feasible
-
----
-
-*End of template. Suggested minimum viable study: Track A models {ResNet-18, ResNet-50, VGG-16} × {FP32, FP16, INT8} via trtexec at MAXN Super (Exp. A), plus the same three precisions of one model swept across {7 W, 15 W, Super} for the H5 "Super" test, plus one camera run each for {SSD-MobileNet-v2, YOLOv8n, YOLOv8s} at INT8/Super (Exp. B). That's ~24 + a handful of runs and answers RQ1–RQ4 and both headline hypotheses (INT8 Tensor-Core speedup and the Super uplift).*
+- [x] Power supply type/rating recorded (§4.1: 9 V / 2.37 A, 45 W); draw never exceeded ~20 W peak, so headroom confirmed
+- [x] Warm-up and N fixed and stated (W = 2000 ms, N ≥ 1000, R = 3 — §5.2; **exception:** Table 7 pipeline power is R = 1 at 15 W and 7 W, flagged in §8)
+- [ ] INT8 calibration set documented (C.2) — **N/A: no calibration cache used; INT8 accuracy not assessed (see Table 3 note and §8)**
+- [x] Same camera, lighting, scene/clip across runs — single fixed clip reused for all three detectors (C.2)
+- [x] Cooldowns + temperature logged; throttled runs flagged — 60 s cooldown, θ logged per run, nothing throttled (θ ≤ 62 °C)
+- [x] `tegrastats` power rail verified against actual log — `VDD_IN` confirmed present on this unit (B.2)
+- [x] Fixed image/clip manifest saved (C.2)
+- [x] Raw CSVs + logs archived alongside this paper (`data/`, see `data/README.md`; **gap:** the SSD pipeline `tegrastats` logs were lost — parsed values survive in `run_metrics.txt`)
+- [x] Harness scripts included — `scripts/run_config.sh`, `bench_e2e.py`, `parse_tegrastats.py`, `score_accuracy.py`, `models_download.py`
+- [ ] Run order randomized/counterbalanced where feasible — **not done**; runs were executed grouped by model and precision, so slow thermal drift is confounded with configuration order. Mitigated by the 60 s cooldowns, the absence of throttling, and tight R = 3 spreads (<1%), but not eliminated.

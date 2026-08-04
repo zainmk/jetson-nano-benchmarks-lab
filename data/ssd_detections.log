@@ -1,0 +1,25 @@
+=== frame_0000 ===
+2 objects detected
+detected obj 0  class #67 (dining table)  confidence=0.810547
+detected obj 1  class #84 (book)  confidence=0.891602
+=== frame_0005 ===
+1 objects detected
+detected obj 0  class #84 (book)  confidence=0.597656
+=== frame_0010 ===
+1 objects detected
+detected obj 0  class #84 (book)  confidence=0.716309
+=== frame_0015 ===
+1 objects detected
+detected obj 0  class #1 (person)  confidence=0.654297
+=== frame_0020 ===
+=== frame_0030 ===
+1 objects detected
+detected obj 0  class #70 (toilet)  confidence=0.968750
+=== frame_0040 ===
+=== frame_0050 ===
+1 objects detected
+detected obj 0  class #47 (cup)  confidence=0.534668
+=== frame_0060 ===
+1 objects detected
+detected obj 0  class #62 (chair)  confidence=0.577148
+=== frame_0070 ===
