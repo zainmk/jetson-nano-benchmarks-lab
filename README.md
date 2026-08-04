@@ -6,7 +6,7 @@ A measurement study of real-time object recognition on the **NVIDIA Jetson Orin 
 
 **Environment:** JetPack 6.2.1 · L4T 36.4.7 · CUDA 12.6 · TensorRT 10.3 · Ampere GPU (SM 8.7)
 
-<img width="1280" height="720" alt="yolo_frame_detection" src="https://github.com/user-attachments/assets/bc02a9d3-cd4c-4c88-a0c4-66f1c058cd34" />
+
 
 <img width="302" height="403" alt="IMG_3469" src="https://github.com/user-attachments/assets/ccd69b65-205e-4f72-b40a-e0054f61dc54" />
 
@@ -38,6 +38,9 @@ A measurement study of real-time object recognition on the **NVIDIA Jetson Orin 
 - All three detectors (SSD-Mobilenet-v2, YOLOv8n, YOLOv8s) infer **5–8× faster than the camera delivers frames**; none is compute-bound.
 - Capture rate is dominated by pixel format: raw YUYV at 720p exceeds USB 2.0 bandwidth (**9.6 fps**) while MJPG restores **~29 fps** — a 3× swing from the codec alone.
 - Detection accuracy is monotonic in model capacity: **21% / 31% / 48%** class-presence recall for SSD / YOLOv8n / YOLOv8s.
+
+
+<img width="1280" height="720" alt="yolo_frame_detection" src="https://github.com/user-attachments/assets/bc02a9d3-cd4c-4c88-a0c4-66f1c058cd34" />
 
 ![Precision speedup over FP32](images/fig3_precision_speedup.png)
 
