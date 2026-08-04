@@ -173,15 +173,136 @@ with an explicit `os._exit(0)` so runs end cleanly.
 
 ---
 
+## 11. A prediction that failed — the bottleneck never flipped
+
+**Zain:** If YOLOv8s is heavy enough, does the GPU become the bottleneck instead of the camera?
+
+**Claude:** That's the interesting contrast to look for — SSD is camera-bound, but a 640² model
+might drop below 30 fps and flip it.
+
+**Zain:** *(runs the sweep)* `throughput=159.327fps`
+
+**Claude:** That refutes the prediction. YOLOv8s runs **5× faster** than the camera can deliver
+frames — still camera-bound. And at the *lowest* power mode it holds 45.7 fps, still 1.5× the
+requirement. **No configuration tested on this platform is compute-bound under a 30 fps webcam.**
+
+**Design decision:** Rather than bury the failed prediction, I wrote it into the discussion as a
+stronger result than the one expected: the bottleneck is not merely present for lightweight models,
+it is *universal* across everything the board can reasonably run. Locating the actual crossover —
+where a model finally cannot keep up — became the lead item in future work.
+
+---
+
+## 12. Measuring the inversion, and catching three errors doing it
+
+**Zain:** *(after the power sweep)* mean_power_W=3.97 at 7 W.
+
+**Claude:** Energy per frame falls monotonically as the power mode drops — 212 → 184 → **137 mJ**
+for identical 29 fps output. MAXN burns 1.55× the energy to produce exactly the same result. This
+inverts the Experiment A conclusion.
+
+Three corrections came out of scrutinising that result rather than accepting it:
+
+1. **My own pre-measurement estimate was wrong.** I had predicted the modes would land within a few
+   percent, assuming a mode-independent idle floor. Idle power itself scales down with the mode, so
+   the effect was far larger than predicted. The wrong prediction is recorded in the report, because
+   the same reasoning would have understated low-power operation in a design review.
+2. **The GPU-utilisation column was mislabelled.** I had written 77% / 49% / 24% as evidence of duty
+   cycle; those are *peak* values from `max(GR3D_FREQ)`. Mean utilisation is ~3%. The mechanism I had
+   described was not supported by that column and had to be replaced.
+3. **The measurement windows were misaligned.** Cross-referencing host log timestamps against the
+   harness completion time showed the 7 W log ended 19 s *before* its run finished while the 15 W log
+   ran 113 s *past* it — loose in opposite directions.
+
+**Zain:** Is it possible the delay between starting/stopping tegrastats and the container is
+offsetting the data?
+
+**Design decision:** That question was the right one and it drove the audit. The corrected mechanism
+turned out to be *cleaner* than the original: segmenting by GPU activity showed active-sample power
+is indistinguishable from idle-sample power, meaning board draw is a **static function of the power
+mode** rather than of the inference. The direction of the result survives the window problem (the
+bias would only widen the gap), but the absolute values are reported as approximate, with the
+methodology flaw documented in §8 rather than quietly smoothed over.
+
+---
+
+## 13. "Is this actually novel, or am I stating the obvious?"
+
+**Zain:** It seems like the experiment is just identifying that the USB camera is the bottleneck —
+is this a strong enough lab report? Be straightforward.
+
+**Claude:** The conclusions are not novel. That reduced clocks lower power, and that a slow sensor
+bottlenecks a fast accelerator, are established results; scaling frequency to just meet a deadline is
+textbook real-time systems practice. If the report is framed as *discovering* them, an experienced
+reviewer will read it as naive.
+
+What is defensible is the characterization and the methodology — measuring the magnitudes precisely
+on this platform, and documenting what it takes to obtain numbers worth trusting.
+
+**Design decision:** Reframed the entire report around that honest positioning. The title, abstract,
+and contributions were rewritten from an effects study to a measurement study, opening with an
+explicit statement that several conclusions are confirmatory rather than novel. The documented
+measurement pitfalls — a tool over-reporting latency 5×, a 3× capture collapse from a pixel format,
+power-mode IDs contradicting vendor documentation — were promoted from footnotes to a headline
+contribution, because they are the part a reader cannot get anywhere else.
+
+---
+
+## 14. Catching an unfair comparison before it reached a table
+
+**Claude:** *(scoring the detection accuracy)* Before these numbers go in — the thresholds don't
+match. `detectNet` defaults to 0.5, Ultralytics to 0.25. YOLO was credited for detections SSD would
+never have emitted; several of its "false positives" sit below SSD's cutoff.
+
+Re-scoring YOLO at 0.5 moved YOLOv8n from 41% to 31% recall and 5 false positives to 2. **The model
+ordering held at both thresholds**, so the ranking is robust — but the magnitudes were not
+comparable until the thresholds were matched.
+
+**Design decision:** Wrote a scoring script (`score_accuracy.py`) that applies a single threshold
+uniformly and takes it as an argument, so threshold sensitivity is checkable rather than assumed.
+Also flagged and corrected a ground-truth error of my own: three independent detectors reported a
+`dining table` I had omitted from the labels, which on review was simply the desk — a reminder that
+in AI-assisted annotation, label errors propagate identically into every model's score.
+
+---
+
+## 15. Free data — the storage dimension
+
+**Zain:** Do we have any assessment of the storage difference between FP32, FP16, INT8?
+
+**Claude:** We do, in the archived logs — `trtexec` records engine size and we never extracted it.
+
+Serialized engine size halves at each precision step, giving a consistent **3.9–4.0× reduction from
+FP32 to INT8** across all three architectures. VGG-16 goes from 528 MiB to 133 MiB. And among the
+detectors: SSD-Mobilenet-v2 has the *largest* engine (36 MiB) and the *worst* accuracy, while
+YOLOv8s is 33% smaller with 2.3× the recall.
+
+**Design decision:** Added the storage axis to the report without any new measurement — the data was
+already archived. It also sharpened an omission: every measured cost of INT8 is now lower (time,
+energy, storage), leaving accuracy as the single unquantified one, which frames Table 3's absence as
+a specific known gap rather than a vague hole.
+
+---
+
 ## Reflection
 
-The through-line across both experiments: the AI is fast at interpreting raw tool output,
-recalling command syntax, and proposing structure — but a striking number of its initial
-assumptions, and even the *tools' own self-reported measurements*, were **wrong for this specific
-setup**: the power-mode IDs, the ambient-temperature source, the container tag, the 7 W reboot
-behaviour, and `detectnet`'s 5×-inflated timer. In every case the value came from checking the
-claim against the actual hardware and correcting it.
+Two things stand out across this project.
 
-The study is more correct *because* the assumptions were tested, not accepted. That is the
-workflow I'd bring to a team: use AI to move quickly, but treat every claim it makes about the
-real system — and every number a tool prints — as a hypothesis to verify.
+**The AI's confident claims about the hardware were frequently wrong.** The power-mode IDs, the
+ambient-temperature source, the container tag, the 7 W reboot behaviour, the predicted energy
+parity, and my own mislabelled utilisation column — each was corrected only by checking against the
+device. So were the *tools'* own numbers: `detectnet` over-reported inference latency by 5×, and two
+detectors were nearly compared at mismatched confidence thresholds. The measurements that survived
+are the ones that were doubted first.
+
+**The most useful question I asked was whether the findings were actually interesting.** They largely
+are not, in the sense of novelty — reduced clocks save power, slow sensors bottleneck fast chips.
+Recognising that changed the report from a discovery claim into a characterization and methodology
+study, which is both more honest and more defensible. The final result does carry a real design
+insight — that the optimal power mode *and* the optimal model size both invert once the sensor rather
+than the accelerator sets the pace — but it is presented as a consequence of careful measurement
+rather than as a surprise.
+
+That is the workflow I would bring to a team: use AI to move quickly, verify every claim it makes
+about the real system, and be willing to ask whether the result is worth the write-up before writing
+it up.
