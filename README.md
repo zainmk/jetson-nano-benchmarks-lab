@@ -6,6 +6,12 @@ A measurement study of real-time object recognition on the **NVIDIA Jetson Orin 
 
 **Environment:** JetPack 6.2.1 · L4T 36.4.7 · CUDA 12.6 · TensorRT 10.3 · Ampere GPU (SM 8.7)
 
+<img width="1280" height="720" alt="yolo_frame_detection" src="https://github.com/user-attachments/assets/bc02a9d3-cd4c-4c88-a0c4-66f1c058cd34" />
+
+<img width="302" height="403" alt="IMG_3469" src="https://github.com/user-attachments/assets/ccd69b65-205e-4f72-b40a-e0054f61dc54" />
+
+
+
 ---
 
 ## The conclusion
